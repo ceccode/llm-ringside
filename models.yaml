@@ -36,6 +36,12 @@ models:
   - id: xf/gemma-4-12b
     provider: xference
     model: gemma-4-12B-it
+  - id: xf/gemma-4-e4b
+    provider: xference
+    model: gemma-4-E4B-it
+  - id: xf/deepseek-v4-flash
+    provider: xference
+    model: deepseek-v4-flash
 
   # --- Anthropic ---
   - id: claude/sonnet-5.5
