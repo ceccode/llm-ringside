@@ -1,0 +1,59 @@
+# One adapter for everything: every provider speaks OpenAI chat/completions.
+# `extra` is merged into the request body as-is (provider-specific knobs).
+
+providers:
+  xference:
+    base_url: https://api.xference.ai/v1
+    api_key_env: XFERENCE_API_KEY
+  anthropic:
+    base_url: https://api.anthropic.com/v1   # OpenAI-compatible endpoint
+    api_key_env: ANTHROPIC_API_KEY
+  openai:
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+  opencode:
+    base_url: https://opencode.ai/zen/go/v1    # OpenCode Go gateway
+    api_key_env: OPENCODE_API_KEY
+
+models:
+  # --- Xference ---
+  - id: xf/qwen3.6-35b-a3b
+    provider: xference
+    model: Qwen3.6-35B-A3B
+    extra: { chat_template_kwargs: { enable_thinking: false } }
+  - id: xf/qwen3.6-35b-a3b:think
+    provider: xference
+    model: Qwen3.6-35B-A3B
+    extra: { chat_template_kwargs: { enable_thinking: true } }
+  - id: xf/qwen3.8-27b
+    provider: xference
+    model: Qwen3.8-27B
+    extra: { chat_template_kwargs: { enable_thinking: false } }
+  - id: xf/qwen3.8-27b:think
+    provider: xference
+    model: Qwen3.8-27B
+    extra: { chat_template_kwargs: { enable_thinking: true } }
+  - id: xf/gemma-4-12b
+    provider: xference
+    model: gemma-4-12B-it
+
+  # --- Anthropic ---
+  - id: claude/sonnet-5.5
+    provider: anthropic
+    model: claude-sonnet-5-5
+  - id: claude/haiku-5.5
+    provider: anthropic
+    model: claude-haiku-5-5
+
+  # --- OpenAI (check ids with: uv run python -m bench.list_models openai) ---
+  - id: openai/gpt-5-mini
+    provider: openai
+    model: gpt-5-mini
+  - id: openai/gpt-5
+    provider: openai
+    model: gpt-5
+
+  # --- OpenCode Go (check ids with: uv run python -m bench.list_models opencode) ---
+  # - id: opencode/<model>
+  #   provider: opencode
+  #   model: <model>
