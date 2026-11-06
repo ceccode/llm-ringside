@@ -420,6 +420,7 @@ async function openRun(id) {
   $('#prompt').value = r.prompt; $('#system').value = r.system || ''; $('#criteria').value = r.criteria || '';
   $('#max_tokens').value = r.params.max_tokens; $('#temperature').value = r.params.temperature ?? ''; $('#repeat').value = r.params.repeat;
   $('#grid').innerHTML = ''; cards = {}; currentRun = r.id; runModels = new Set(r.results.map(x => x.model_id));
+  for (const i of document.querySelectorAll('#models input')) i.checked = runModels.has(i.value) && !i.disabled;
   for (const x of r.results) { card(x.model_id, x.rep, r.params.repeat); applyResult(x); }
   status(`run #${r.id} · ${when(r.created_at)} UTC`);
   refresh();

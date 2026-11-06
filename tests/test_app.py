@@ -134,3 +134,10 @@ def test_run_needs_a_prompt_or_a_known_task(client):
     assert client.post("/api/run", json={"model_ids": ["fake/ok"]}).status_code == 400
     assert client.post("/api/run", json={"prompt": "  ", "model_ids": ["fake/ok"]}).status_code == 400
     assert client.post("/api/run", json={"task_id": "nope", "model_ids": ["fake/ok"]}).status_code == 400
+
+
+def test_judge_out_of_tokens_says_so(client):
+    run_id = events(client.post("/api/run", json={"prompt": "hi", "model_ids": ["fake/ok"]}))[0]["run_id"]
+    out = client.post(f"/api/runs/{run_id}/judge", json={"judge_model_id": "fake/judgecut"}).json()
+    [v] = out["results"]
+    assert v["judge_score"] is None and "token limit" in v["judge_reason"]

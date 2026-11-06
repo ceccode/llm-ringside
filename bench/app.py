@@ -39,6 +39,9 @@ class RatingRequest(BaseModel):
     rating: int | None = Field(default=None, ge=1, le=5)
 
 
+JUDGE_MAX_TOKENS = 2048  # room for models that think silently first (Claude 5.5 does, over the OpenAI endpoint)
+
+
 class JudgeRequest(BaseModel):
     judge_model_id: str
 
@@ -154,8 +157,10 @@ def create_app(
 
         async def grade(x: dict) -> dict:
             msgs = build_messages(run["prompt"], run["system"], x["content"], run["criteria"])
-            r = await run_model(judge_mc, msgs, max_tokens=300, client=http_client)
+            r = await run_model(judge_mc, msgs, max_tokens=JUDGE_MAX_TOKENS, client=http_client)
             v = parse_verdict(r.content) if r.status == "ok" else Verdict(None, r.error or "judge failed")
+            if v.score is None and r.finish_reason == "length":
+                v = Verdict(None, f"judge hit its {JUDGE_MAX_TOKENS}-token limit before finishing its verdict")
             return {"id": x["id"], "judge_score": v.score, "judge_reason": v.reason}
 
         gradable = [x for x in run["results"] if x["status"] == "ok" and x["content"]]
