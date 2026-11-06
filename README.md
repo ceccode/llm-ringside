@@ -1,10 +1,14 @@
-# ai-benchmark
+# llm-ringside
 
-One prompt, several LLM APIs, answers streamed side by side with the numbers that matter:
-time to first token, total time, tokens per second, token usage, and what went wrong.
+A ringside seat for LLM APIs. Send one prompt, or one agentic task, to several models at once
+and watch them answer side by side:
 
-Built to compare [Xference](https://www.xference.ai) with Anthropic, OpenAI and OpenCode Go,
-but it works with any endpoint that speaks the OpenAI `chat/completions` format.
+- **Speed and reliability, measured**: time to first token, total time, tokens per second, token usage, and every way a request can fail.
+- **Quality, judged**: rate the answers yourself, or let a judge model score them and say why.
+- **Tool use, checked**: multi-turn tasks with mocked tools, scored by a machine instead of an opinion.
+
+It works with any endpoint that speaks the OpenAI `chat/completions` format and ships configured
+for [Xference](https://www.xference.ai), Anthropic, OpenAI and OpenCode Go.
 No framework, no build step: a FastAPI server, a SQLite file and one HTML page.
 
 <picture>
@@ -15,6 +19,7 @@ No framework, no build step: a FastAPI server, a SQLite file and one HTML page.
 ## Quick start
 
 ```bash
+git clone https://github.com/ceccode/llm-ringside && cd llm-ringside
 cp .env.example .env            # add the API keys you have
 uv sync
 uv run uvicorn bench.app:app --port 8000

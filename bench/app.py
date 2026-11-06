@@ -52,7 +52,7 @@ def create_app(
     http_client: httpx.AsyncClient | None = None,
     tasks: dict[str, Task] | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="ai-benchmark")
+    app = FastAPI(title="llm-ringside")
     tasks = tasks or {}
 
     @app.get("/")
