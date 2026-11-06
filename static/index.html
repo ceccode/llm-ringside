@@ -3,140 +3,236 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>ai-benchmark</title>
 <style>
   :root {
-    --bg: #fff; --fg: #111; --muted: #6b7280; --line: #e5e7eb; --soft: #f6f7f9;
-    --ok: #16a34a; --err: #dc2626; --run: #2563eb; --accent: #111;
+    --bg: #fff; --fg: #111; --muted: #5f6673; --line: #e5e7eb; --soft: #f6f7f9;
+    --ok: #15803d; --err: #dc2626; --run: #2563eb; --star: #d97706; --accent: #111;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #0f1115; --fg: #e5e7eb; --muted: #9ca3af; --line: #262a33; --soft: #171a21; --accent: #e5e7eb; }
+    :root { --bg: #0f1115; --fg: #e5e7eb; --muted: #9ca3af; --line: #262a33; --soft: #171a21;
+            --ok: #4ade80; --err: #f87171; --run: #60a5fa; --star: #fbbf24; --accent: #e5e7eb; }
   }
   * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
   body { margin: 0; background: var(--bg); color: var(--fg);
-         font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  header { display: flex; align-items: baseline; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
-  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
-  header a { color: var(--muted); cursor: pointer; text-decoration: none; }
-  header a.active { color: var(--fg); }
-  main { padding: 16px 20px; max-width: 1800px; }
-  textarea, input, select { font: inherit; color: inherit; background: var(--soft);
-    border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
-  textarea { width: 100%; min-height: 90px; resize: vertical; }
-  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
-  .row label { color: var(--muted); display: flex; gap: 6px; align-items: center; }
-  .row input[type=number] { width: 80px; }
-  button { font: inherit; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--accent);
-           background: var(--accent); color: var(--bg); cursor: pointer; }
-  button:disabled { opacity: .5; cursor: default; }
-  button.ghost { background: transparent; color: var(--fg); border-color: var(--line); padding: 4px 10px; }
-  .models { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px; }
-  .models fieldset { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; min-width: 160px; }
-  .models legend { color: var(--muted); padding: 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-  .models label { display: block; white-space: nowrap; }
-  .models label.nokey { color: var(--muted); }
-  details summary { cursor: pointer; color: var(--muted); }
-  #grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); margin-top: 20px; }
-  .card { border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; min-height: 200px; overflow: hidden; }
-  .card .head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--soft); border-bottom: 1px solid var(--line); }
-  .card .name { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
-  .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; }
-  .pill.run { color: var(--run); } .pill.ok { color: var(--ok); } .pill.error { color: var(--err); }
-  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px 8px; padding: 8px 12px;
-             border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
-  .metrics div { font-size: 12px; } .metrics b { display: block; font-weight: 500; }
-  .metrics span { color: var(--muted); font-size: 11px; }
-  .body { padding: 10px 12px; flex: 1; overflow: auto; max-height: 520px; }
-  .body pre { margin: 0; white-space: pre-wrap; word-wrap: break-word; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .body details { margin-bottom: 8px; } .body details pre { color: var(--muted); font-size: 12px; }
-  .errmsg { color: var(--err); white-space: pre-wrap; font-size: 13px; }
-  .foot { display: flex; gap: 4px; padding: 8px 12px; border-top: 1px solid var(--line); align-items: center; }
-  .foot .stars button { background: transparent; border: none; color: var(--muted); padding: 2px 4px; font-size: 16px; }
-  .foot .stars button.on { color: #f59e0b; }
-  .foot .muted { margin-left: auto; color: var(--muted); font-size: 11px; font-family: ui-monospace, monospace; }
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  ::selection { background: color-mix(in srgb, var(--run) 28%, transparent); }
+  :focus-visible { outline: 2px solid var(--run); outline-offset: 2px; }
+  .hidden { display: none !important; }
   .muted { color: var(--muted); }
-  table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  header { display: flex; align-items: baseline; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header nav { display: flex; gap: 14px; }
+  header nav a { color: var(--muted); text-decoration: none; padding: 8px 0; border-bottom: 2px solid transparent; }
+  header nav a[aria-current] { color: var(--fg); border-bottom-color: var(--fg); }
+  main { padding: 12px 16px 40px; max-width: 1800px; margin: 0 auto; }
+
+  .field { display: block; margin-top: 12px; }
+  .field > span { display: block; color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+  textarea, input, select { font: inherit; font-size: 16px; color: inherit; background: var(--soft);
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; caret-color: var(--run); }
+  ::placeholder { color: var(--muted); opacity: 1; }
+  textarea { width: 100%; min-height: 96px; resize: vertical; }
+  details { margin-top: 6px; }
+  details summary { cursor: pointer; color: var(--muted); padding: 8px 0; list-style-position: inside; }
+  details .field { margin-top: 0; }
+
+  .row { display: flex; gap: 10px 14px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .row label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+  .row input[type=number] { width: 84px; }
+  button { font: inherit; min-height: 40px; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--accent);
+           background: var(--accent); color: var(--bg); cursor: pointer; }
+  button:hover:not(:disabled) { opacity: .85; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.ghost { background: transparent; color: var(--fg); border-color: var(--line); }
+  button.ghost:hover:not(:disabled) { background: var(--soft); opacity: 1; }
+  .hint { color: var(--muted); font-size: 13px; }
+
+  .models { display: grid; gap: 10px; margin-top: 12px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+            border: none; padding: 0; }
+  .models fieldset { border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px 6px; margin: 0; min-width: 0; }
+  .models legend { color: var(--muted); padding: 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .models label { display: flex; gap: 10px; align-items: center; min-height: 36px; cursor: pointer; }
+  .models input[type=checkbox] { width: 18px; height: 18px; margin: 0; accent-color: var(--run); flex: none; }
+  .models label.nokey { color: var(--muted); cursor: not-allowed; }
+  .models .id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; overflow-wrap: anywhere; }
+
+  .toolbar { display: flex; gap: 8px 14px; align-items: center; flex-wrap: wrap; margin-top: 20px;
+             padding-top: 12px; border-top: 1px solid var(--line); }
+  .toolbar .status { flex: 1 1 220px; font-variant-numeric: tabular-nums; min-height: 24px; }
+  .toolbar label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+  .toolbar select { max-width: 220px; min-height: 40px; }
+
+  #grid { display: grid; gap: 12px; grid-template-columns: 1fr; margin-top: 12px; }
+  .card { border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; min-height: 200px; overflow: hidden; }
+  .card .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px;
+                background: var(--soft); border-bottom: 1px solid var(--line); }
+  .card .name { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; overflow-wrap: anywhere; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; flex: none; }
+  .pill.run { color: var(--run); animation: pulse 1.6s ease-in-out infinite; }
+  .pill.ok { color: var(--ok); } .pill.error { color: var(--err); }
+  @keyframes pulse { 50% { opacity: .4; } }
+  @media (prefers-reduced-motion: reduce) { .pill.run { animation: none; } }
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px 8px; padding: 8px 12px; margin: 0;
+             border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  .metrics div { font-size: 12px; } .metrics dd { margin: 0; font-weight: 500; font-size: 13px; }
+  .metrics dt { color: var(--muted); font-size: 11px; }
+  .body { padding: 10px 12px; flex: 1; overflow: auto; max-height: 520px; }
+  .body pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+  .body details { margin: 0 0 8px; } .body details summary { padding: 4px 0; }
+  .body details pre { color: var(--muted); font-size: 13px; }
+  .errmsg { color: var(--err); white-space: pre-wrap; font-size: 13px; }
+  .foot { padding: 6px 12px 8px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+  .foot .line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .stars { display: flex; }
+  .stars button { min-height: 36px; min-width: 36px; padding: 0; background: transparent; border: none; color: var(--muted); display: grid; place-items: center; }
+  .stars svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+  .stars button.on { color: var(--star); } .stars button.on svg { fill: currentColor; }
+  .meta { margin-left: auto; color: var(--muted); font-size: 12px; font-family: ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+  .verdict { font-size: 13px; color: var(--muted); }
+  .verdict b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  .table-wrap { overflow-x: auto; margin-top: 12px; }
+  table { border-collapse: collapse; width: 100%; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th, td.when { white-space: nowrap; }
   th { color: var(--muted); font-weight: 500; font-size: 12px; }
-  tr.click { cursor: pointer; } tr.click:hover { background: var(--soft); }
-  td.prompt { max-width: 600px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .hidden { display: none; }
+  td.prompt { max-width: 60vw; }
+  td.prompt a { color: var(--fg); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px;
+                display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  td.prompt a:hover { text-decoration-color: currentColor; }
+
+  @media (max-width: 420px) { .metrics { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 720px) {
+    body { font-size: 14px; }
+    textarea, input, select { font-size: 14px; }
+    header { padding: 12px 20px; } main { padding: 14px 20px 40px; }
+    #grid { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+    td.prompt { max-width: 600px; }
+  }
 </style>
 </head>
 <body>
 <header>
   <h1>ai-benchmark</h1>
-  <a id="nav-bench" class="active">bench</a>
-  <a id="nav-history">history</a>
-  <span id="status" class="muted" style="margin-left:auto"></span>
+  <nav aria-label="Sections">
+    <a href="#bench" id="nav-bench">bench</a>
+    <a href="#history" id="nav-history">history</a>
+  </nav>
 </header>
 
 <main id="bench">
-  <textarea id="prompt" placeholder="Prompt…"></textarea>
-  <details style="margin-top:8px"><summary>system prompt</summary>
-    <textarea id="system" style="min-height:60px;margin-top:6px" placeholder="(optional)"></textarea>
+  <label class="field" for="prompt"><span>Prompt</span>
+    <textarea id="prompt" placeholder="What should every model answer?"></textarea></label>
+  <details><summary>system prompt</summary>
+    <label class="field" for="system"><span>Sent to every model as the system message.</span>
+      <textarea id="system" style="min-height:60px" placeholder="optional"></textarea></label>
   </details>
-  <div class="models" id="models"></div>
+  <details><summary>judge criteria</summary>
+    <label class="field" for="criteria"><span>Expected answer or grading criteria. Only the judge reads this, never the models.</span>
+      <textarea id="criteria" style="min-height:60px" placeholder="optional"></textarea></label>
+  </details>
+
+  <fieldset class="models" id="models" aria-label="Models"></fieldset>
+
   <div class="row">
     <label>max_tokens <input type="number" id="max_tokens" value="1024" min="1"></label>
     <label>temperature <input type="number" id="temperature" step="0.1" min="0" max="2" placeholder="default"></label>
     <label>repeat <input type="number" id="repeat" value="1" min="1" max="10"></label>
     <label>timeout s <input type="number" id="timeout" value="180" min="5"></label>
-    <button id="run">Run</button>
+    <button id="run" type="button" disabled>Run</button>
+    <span class="hint" id="run-hint"></span>
+  </div>
+
+  <div class="toolbar">
+    <span class="status" id="status" role="status" aria-live="polite">Results appear here after a run. ⌘/Ctrl+Enter runs too.</span>
+    <label for="judge">judge <select id="judge"></select></label>
+    <button id="judge-btn" type="button" class="ghost" disabled>Judge</button>
+    <span class="hint" id="judge-hint"></span>
   </div>
   <div id="grid"></div>
 </main>
 
 <main id="history" class="hidden">
+  <div class="table-wrap">
   <table>
-    <thead><tr><th>#</th><th>when</th><th>prompt</th><th>models</th><th>errors</th><th></th></tr></thead>
+    <thead><tr><th>#</th><th>when (UTC)</th><th>prompt</th><th>results</th><th>errors</th><th></th></tr></thead>
     <tbody id="runs"></tbody>
   </table>
+  </div>
 </main>
 
 <script>
 const $ = s => document.querySelector(s);
 const fmt = (v, d=0) => v == null ? '–' : Number(v).toFixed(d);
 const ms = v => v == null ? '–' : v < 1000 ? `${fmt(v)} ms` : `${fmt(v/1000, 2)} s`;
-const esc = s => (s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const esc = s => (s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const key = (m, r) => `${m}#${r}`;
-let cards = {};
+const when = iso => iso.replace('T', ' ').slice(0, 16);
+const STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.6 6.1.7-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.8l6.1-.7z"/></svg>';
+let MODELS = [], cards = {}, currentRun = null, runModels = new Set(), running = false, judging = false;
+const status = t => { $('#status').textContent = t; };
 
 // ---- models ----
 async function loadModels() {
-  const models = await (await fetch('/api/models')).json();
+  MODELS = await (await fetch('/api/models')).json();
   const byProv = {};
-  for (const m of models) (byProv[m.provider] ||= []).push(m);
+  for (const m of MODELS) (byProv[m.provider] ||= []).push(m);
   const saved = new Set(JSON.parse(localStorage.getItem('sel') || '[]'));
   $('#models').innerHTML = Object.entries(byProv).map(([p, ms]) => `
-    <fieldset><legend>${p}</legend>${ms.map(m => `
-      <label class="${m.has_key ? '' : 'nokey'}" title="${m.model}">
-        <input type="checkbox" value="${m.id}" ${m.has_key ? '' : 'disabled'} ${saved.has(m.id) ? 'checked' : ''}>
-        ${m.id}${m.has_key ? '' : ' <small>(no key)</small>'}</label>`).join('')}
+    <fieldset><legend>${esc(p)}</legend>${ms.map(m => `
+      <label class="${m.has_key ? '' : 'nokey'}" title="${esc(m.model)}">
+        <input type="checkbox" value="${esc(m.id)}" ${m.has_key ? '' : 'disabled'} ${saved.has(m.id) ? 'checked' : ''}>
+        <span class="id">${esc(m.id)}</span>${m.has_key ? '' : ' <small>(no key)</small>'}</label>`).join('')}
     </fieldset>`).join('');
+  const savedJudge = localStorage.getItem('judge');
+  $('#judge').innerHTML = MODELS.filter(m => m.has_key)
+    .map(m => `<option value="${esc(m.id)}" ${m.id === savedJudge ? 'selected' : ''}>${esc(m.id)}</option>`).join('');
+  refresh();
 }
 const selected = () => [...document.querySelectorAll('#models input:checked')].map(i => i.value);
+
+// Constraints with a visible reason: a disabled button always says why (Norman).
+function refresh() {
+  const prompt = $('#prompt').value.trim(), sel = selected();
+  const why = running ? 'running…' : !prompt ? 'write a prompt to run' : !sel.length ? 'pick at least one model' : '';
+  $('#run').disabled = !!why; $('#run-hint').textContent = why;
+
+  const judge = $('#judge').value;
+  const jwhy = !judge ? 'no model with a key to judge with' : !currentRun ? 'run first, then judge' : running ? 'wait for the run' : '';
+  $('#judge-btn').disabled = !!jwhy || judging;
+  const contestant = !jwhy && runModels.has(judge);
+  $('#judge-hint').textContent = jwhy || (contestant ? 'the judge is also a contestant: expect self-preference' : '');
+}
 
 // ---- cards ----
 function card(model_id, rep, repeat) {
   const k = key(model_id, rep);
-  const el = document.createElement('div');
+  const el = document.createElement('article');
   el.className = 'card';
+  el.setAttribute('aria-label', `${model_id}${repeat > 1 ? ` run ${rep+1}` : ''}`);
   el.innerHTML = `
     <div class="head"><span class="name">${esc(model_id)}${repeat > 1 ? ` <span class="muted">#${rep+1}</span>` : ''}</span>
       <span class="pill run">running</span></div>
-    <div class="metrics">
-      <div><b class="ttft">–</b><span>TTFT</span></div>
-      <div><b class="total">–</b><span>total</span></div>
-      <div><b class="tps">–</b><span>tok/s</span></div>
-      <div><b class="tokens">–</b><span>out tokens</span></div>
-    </div>
+    <dl class="metrics">
+      <div><dd class="ttft">–</dd><dt>TTFT</dt></div>
+      <div><dd class="total">–</dd><dt>total</dt></div>
+      <div><dd class="tps">–</dd><dt>tok/s</dt></div>
+      <div><dd class="tokens">–</dd><dt>out tokens</dt></div>
+    </dl>
     <div class="body">
       <details class="reasoning hidden"><summary>reasoning</summary><pre></pre></details>
       <pre class="content"></pre>
-      <div class="errmsg hidden"></div>
+      <div class="errmsg hidden" role="alert"></div>
     </div>
-    <div class="foot hidden"><span class="stars"></span><span class="muted meta"></span></div>`;
+    <div class="foot hidden">
+      <div class="line"><span class="stars" role="radiogroup" aria-label="your rating"></span><span class="meta"></span></div>
+      <div class="verdict hidden"></div>
+    </div>`;
   $('#grid').appendChild(el);
   cards[k] = { el, content: '', reasoning: '' };
   return cards[k];
@@ -155,7 +251,8 @@ function applyDelta(ev) {
 function applyResult(r) {
   const c = cards[key(r.model_id, r.rep)]; if (!c) return;
   const q = s => c.el.querySelector(s);
-  const pill = q('.pill'); pill.className = `pill ${r.status}`; pill.textContent = r.status === 'ok' ? (r.finish_reason || 'ok') : 'error'; pill.title = r.error || '';
+  const pill = q('.pill'); pill.className = `pill ${r.status}`;
+  pill.textContent = r.status === 'ok' ? (r.finish_reason || 'ok') : 'error'; pill.title = r.error || '';
   q('.ttft').textContent = ms(r.ttft_ms);
   q('.total').textContent = ms(r.total_ms);
   q('.tps').textContent = fmt(r.tokens_per_s, 1);
@@ -164,91 +261,134 @@ function applyResult(r) {
   if (r.content != null) { c.content = r.content; q('.content').textContent = r.content; }
   if (r.reasoning) { c.reasoning = r.reasoning; q('.reasoning').classList.remove('hidden'); q('.reasoning pre').textContent = r.reasoning; }
   if (r.error) { const e = q('.errmsg'); e.classList.remove('hidden'); e.textContent = r.error; }
+
   const foot = q('.foot'); foot.classList.remove('hidden');
-  foot.querySelector('.meta').textContent = [r.http_status && `HTTP ${r.http_status}`, r.prompt_tokens != null && `in ${r.prompt_tokens}`,
+  q('.meta').textContent = [r.http_status && `HTTP ${r.http_status}`, r.prompt_tokens != null && `in ${r.prompt_tokens}`,
     r.http_status === 200 && !r.stream_complete ? 'no [DONE]' : null, r.request_id].filter(Boolean).join(' · ');
-  const stars = foot.querySelector('.stars');
-  const paint = v => { stars.innerHTML = [1,2,3,4,5].map(i => `<button class="${i <= (v||0) ? 'on' : ''}" data-v="${i}">★</button>`).join(''); };
+
+  const stars = q('.stars');
+  const paint = v => { stars.innerHTML = [1,2,3,4,5].map(i =>
+    `<button type="button" role="radio" aria-checked="${i === v}" aria-label="${i} of 5" class="${i <= (v||0) ? 'on' : ''}" data-v="${i}">${STAR}</button>`).join(''); };
   paint(r.rating);
   stars.onclick = async e => {
-    const v = +e.target.dataset.v; if (!v) return;
-    const nv = v === r.rating ? null : v; r.rating = nv; paint(nv);
+    const b = e.target.closest('button'); if (!b) return;
+    const v = +b.dataset.v, nv = v === r.rating ? null : v; r.rating = nv; paint(nv);
     await fetch(`/api/results/${r.id}/rating`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ rating: nv }) });
   };
+
+  const v = q('.verdict');
+  v.classList.toggle('hidden', !r.judge_model);
+  if (r.judge_model) v.innerHTML = `judge <b>${r.judge_score == null ? '–' : `${r.judge_score}/5`}</b> ` +
+    `<span class="mono">${esc(r.judge_model)}</span> · ${esc(r.judge_reason)}`;
 }
 
 // ---- run ----
 async function run() {
-  const model_ids = selected();
-  if (!model_ids.length) return alert('pick at least one model');
-  const prompt = $('#prompt').value.trim(); if (!prompt) return alert('prompt is empty');
+  refresh(); if ($('#run').disabled) return;
+  const model_ids = selected(), prompt = $('#prompt').value.trim();
   localStorage.setItem('sel', JSON.stringify(model_ids));
-  const repeat = +$('#repeat').value || 1;
-  const temp = $('#temperature').value;
-  const body = { prompt, system: $('#system').value.trim() || null, model_ids, repeat,
-    max_tokens: +$('#max_tokens').value || 1024, temperature: temp === '' ? null : +temp, timeout_s: +$('#timeout').value || 180 };
+  const repeat = +$('#repeat').value || 1, temp = $('#temperature').value;
+  const body = { prompt, system: $('#system').value.trim() || null, criteria: $('#criteria').value.trim() || null,
+    model_ids, repeat, max_tokens: +$('#max_tokens').value || 1024, temperature: temp === '' ? null : +temp,
+    timeout_s: +$('#timeout').value || 180 };
 
-  $('#grid').innerHTML = ''; cards = {};
+  $('#grid').innerHTML = ''; cards = {}; currentRun = null; runModels = new Set(model_ids);
   for (let rep = 0; rep < repeat; rep++) for (const m of model_ids) card(m, rep, repeat);
-  $('#run').disabled = true; $('#status').textContent = 'running…';
-
-  const resp = await fetch('/api/run', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-  if (!resp.ok) { $('#status').textContent = `error ${resp.status}: ${await resp.text()}`; $('#run').disabled = false; return; }
-  const reader = resp.body.getReader(), dec = new TextDecoder();
-  let buf = '';
-  while (true) {
-    const { value, done } = await reader.read(); if (done) break;
-    buf += dec.decode(value, { stream: true });
-    let i;
-    while ((i = buf.indexOf('\n\n')) >= 0) {
-      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 2);
-      if (!line.startsWith('data:')) continue;
-      const ev = JSON.parse(line.slice(5));
-      if (ev.type === 'delta') applyDelta(ev);
-      else if (ev.type === 'result') applyResult(ev.result);
-      else if (ev.type === 'run') $('#status').textContent = `run #${ev.run_id} running…`;
-      else if (ev.type === 'done') $('#status').textContent = `run #${ev.run_id} done`;
+  running = true; refresh(); status('starting…');
+  try {
+    const resp = await fetch('/api/run', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+    if (!resp.ok) { status(`run failed: ${resp.status} ${(await resp.text()).slice(0, 200)}`); return; }
+    const reader = resp.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 2);
+        if (!line.startsWith('data:')) continue;
+        const ev = JSON.parse(line.slice(5));
+        if (ev.type === 'delta') applyDelta(ev);
+        else if (ev.type === 'result') applyResult(ev.result);
+        else if (ev.type === 'run') { currentRun = ev.run_id; status(`run #${ev.run_id} · running ${model_ids.length * repeat} ${repeat > 1 ? 'jobs' : 'models'}…`); }
+        else if (ev.type === 'done') status(`run #${ev.run_id} · done`);
+      }
     }
-  }
-  $('#run').disabled = false;
+  } catch (e) { status(`run failed: ${e.message}`); }
+  finally { running = false; refresh(); }
+}
+
+// ---- judge ----
+async function judge() {
+  refresh(); if ($('#judge-btn').disabled) return;
+  const judge_model_id = $('#judge').value; localStorage.setItem('judge', judge_model_id);
+  const n = document.querySelectorAll('.card .pill.ok').length;
+  judging = true; refresh(); $('#judge-btn').textContent = 'Judging…';
+  status(`run #${currentRun} · judging ${n} answers with ${judge_model_id}…`);
+  try {
+    const resp = await fetch(`/api/runs/${currentRun}/judge`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ judge_model_id }) });
+    if (!resp.ok) { status(`judge failed: ${resp.status} ${(await resp.text()).slice(0, 200)}`); return; }
+    const out = await resp.json();
+    await openRun(currentRun);
+    status(`run #${currentRun} · judged by ${out.judge_model}`);
+  } catch (e) { status(`judge failed: ${e.message}`); }
+  finally { judging = false; $('#judge-btn').textContent = 'Judge'; refresh(); }
 }
 
 // ---- history ----
 async function showHistory() {
   const runs = await (await fetch('/api/runs')).json();
   $('#runs').innerHTML = runs.map(r => `
-    <tr class="click" data-id="${r.id}"><td>${r.id}</td><td class="muted">${r.created_at.replace('T',' ').slice(0,16)}</td>
-      <td class="prompt" title="${esc(r.prompt)}">${esc(r.prompt)}</td><td>${r.n}</td>
+    <tr><td>${r.id}</td><td class="muted when">${when(r.created_at)}</td>
+      <td class="prompt"><a href="#run/${r.id}" title="${esc(r.prompt)}">${esc(r.prompt)}</a></td><td>${r.n}</td>
       <td>${r.errors ? `<span class="pill error">${r.errors}</span>` : ''}</td>
-      <td><button class="ghost del" data-id="${r.id}">✕</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">no runs yet</td></tr>';
+      <td><button type="button" class="ghost del" data-id="${r.id}" aria-label="delete run #${r.id}">delete</button></td></tr>`).join('')
+    || '<tr><td colspan="6" class="muted">No runs yet. Write a prompt, pick models and press Run.</td></tr>';
 }
 async function openRun(id) {
-  const r = await (await fetch(`/api/runs/${id}`)).json();
+  const resp = await fetch(`/api/runs/${id}`);
   nav('bench');
-  $('#prompt').value = r.prompt; $('#system').value = r.system || '';
+  if (!resp.ok) { status(`run #${id} not found`); return; }
+  const r = await resp.json();
+  $('#prompt').value = r.prompt; $('#system').value = r.system || ''; $('#criteria').value = r.criteria || '';
   $('#max_tokens').value = r.params.max_tokens; $('#temperature').value = r.params.temperature ?? ''; $('#repeat').value = r.params.repeat;
-  $('#grid').innerHTML = ''; cards = {};
+  $('#grid').innerHTML = ''; cards = {}; currentRun = r.id; runModels = new Set(r.results.map(x => x.model_id));
   for (const x of r.results) { card(x.model_id, x.rep, r.params.repeat); applyResult(x); }
-  $('#status').textContent = `run #${r.id} (${r.created_at.replace('T',' ').slice(0,16)})`;
+  status(`run #${r.id} · ${when(r.created_at)} UTC`);
+  refresh();
 }
 function nav(which) {
   $('#bench').classList.toggle('hidden', which !== 'bench');
   $('#history').classList.toggle('hidden', which !== 'history');
-  $('#nav-bench').classList.toggle('active', which === 'bench');
-  $('#nav-history').classList.toggle('active', which === 'history');
+  for (const w of ['bench', 'history']) {
+    const a = $(`#nav-${w}`);
+    if (w === which) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  }
   if (which === 'history') showHistory();
 }
+function route() {
+  const h = location.hash.slice(1);
+  if (h === 'history') nav('history');
+  else if (h.startsWith('run/')) openRun(+h.slice(4));
+  else nav('bench');
+}
 
+// ---- wiring ----
 $('#run').onclick = run;
-$('#prompt').addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') run(); });
-$('#nav-bench').onclick = () => nav('bench');
-$('#nav-history').onclick = () => nav('history');
+$('#judge-btn').onclick = judge;
+for (const id of ['#prompt', '#system', '#criteria'])
+  $(id).addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') run(); });
+$('#prompt').addEventListener('input', refresh);
+$('#models').addEventListener('change', () => { localStorage.setItem('sel', JSON.stringify(selected())); refresh(); });
+$('#judge').addEventListener('change', () => { localStorage.setItem('judge', $('#judge').value); refresh(); });
 $('#runs').onclick = async e => {
-  const del = e.target.closest('.del');
-  if (del) { if (confirm(`delete run #${del.dataset.id}?`)) { await fetch(`/api/runs/${del.dataset.id}`, { method: 'DELETE' }); showHistory(); } return; }
-  const tr = e.target.closest('tr.click'); if (tr) openRun(tr.dataset.id);
+  const del = e.target.closest('.del'); if (!del) return;
+  if (confirm(`Delete run #${del.dataset.id}? This cannot be undone.`)) {
+    await fetch(`/api/runs/${del.dataset.id}`, { method: 'DELETE' }); showHistory();
+  }
 };
-loadModels();
+window.addEventListener('hashchange', route);
+loadModels().then(route);
 </script>
 </body>
 </html>

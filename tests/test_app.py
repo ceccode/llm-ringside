@@ -57,3 +57,33 @@ def test_rating_round_trip_and_delete(client):
 
 def test_unknown_model_is_rejected(client):
     assert client.post("/api/run", json={"prompt": "hi", "model_ids": ["nope"]}).status_code == 400
+
+
+def test_judge_grades_ok_results_and_skips_errors(client):
+    body = {"prompt": "hi", "criteria": "must greet", "model_ids": ["fake/ok", "fake/http429"]}
+    run_id = events(client.post("/api/run", json=body))[0]["run_id"]
+
+    resp = client.post(f"/api/runs/{run_id}/judge", json={"judge_model_id": "fake/judge"})
+    assert resp.status_code == 200
+    out = resp.json()
+    assert out["judge_model"] == "fake/judge"
+    assert [(v["judge_score"], v["judge_reason"]) for v in out["results"]] == [(4, "Clear and correct.")]
+
+    detail = client.get(f"/api/runs/{run_id}").json()
+    assert detail["criteria"] == "must greet"
+    by_model = {x["model_id"]: x for x in detail["results"]}
+    assert by_model["fake/ok"]["judge_score"] == 4 and by_model["fake/ok"]["judge_model"] == "fake/judge"
+    assert by_model["fake/http429"]["judge_score"] is None and by_model["fake/http429"]["judge_model"] is None
+
+
+def test_judge_failure_is_recorded_not_raised(client):
+    run_id = events(client.post("/api/run", json={"prompt": "hi", "model_ids": ["fake/ok"]}))[0]["run_id"]
+    out = client.post(f"/api/runs/{run_id}/judge", json={"judge_model_id": "fake/http429"}).json()
+    assert out["results"][0]["judge_score"] is None and "429" in out["results"][0]["judge_reason"]
+
+
+def test_judge_rejects_bad_ids(client):
+    run_id = events(client.post("/api/run", json={"prompt": "hi", "model_ids": ["fake/ok"]}))[0]["run_id"]
+    assert client.post(f"/api/runs/{run_id}/judge", json={"judge_model_id": "nope"}).status_code == 400
+    assert client.post(f"/api/runs/{run_id}/judge", json={"judge_model_id": "fake/missingkey"}).status_code == 400
+    assert client.post("/api/runs/999/judge", json={"judge_model_id": "fake/judge"}).status_code == 404

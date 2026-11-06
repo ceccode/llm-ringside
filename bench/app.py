@@ -13,12 +13,14 @@ from pydantic import BaseModel, Field
 
 from . import db
 from .config import ROOT, ModelConfig, load
+from .judge import Verdict, build_messages, parse_verdict
 from .runner import run_model
 
 
 class RunRequest(BaseModel):
     prompt: str
     system: str | None = None
+    criteria: str | None = None  # grading criteria / expected answer, read by the judge only
     model_ids: list[str] = Field(min_length=1)
     max_tokens: int = 1024
     temperature: float | None = None
@@ -32,6 +34,10 @@ class RunRequest(BaseModel):
 
 class RatingRequest(BaseModel):
     rating: int | None = Field(default=None, ge=1, le=5)
+
+
+class JudgeRequest(BaseModel):
+    judge_model_id: str
 
 
 def create_app(
@@ -56,7 +62,8 @@ def create_app(
             raise HTTPException(400, f"unknown model ids: {unknown}")
 
         con = db.connect(db_path)
-        run_id = db.create_run(con, req.prompt, req.system, req.model_dump(exclude={"prompt", "system"}))
+        params = req.model_dump(exclude={"prompt", "system", "criteria"})
+        run_id = db.create_run(con, req.prompt, req.system, params, criteria=req.criteria)
         queue: asyncio.Queue[dict | None] = asyncio.Queue()
 
         async def one(model_id: str, rep: int):
@@ -112,6 +119,32 @@ def create_app(
         with db.connect(db_path) as con:
             db.delete_run(con, run_id)
         return {"ok": True}
+
+    @app.post("/api/runs/{run_id}/judge")
+    async def judge(run_id: int, body: JudgeRequest):
+        """Grade every successful answer of a run with one judge model. Re-judging overwrites."""
+        judge_mc = models.get(body.judge_model_id)
+        if not judge_mc:
+            raise HTTPException(400, f"unknown judge model id: {body.judge_model_id}")
+        if not judge_mc.provider.api_key:
+            raise HTTPException(400, f"judge model has no key: {body.judge_model_id}")
+        with db.connect(db_path) as con:
+            run = db.get_run(con, run_id)
+        if not run:
+            raise HTTPException(404)
+
+        async def grade(x: dict) -> dict:
+            msgs = build_messages(run["prompt"], run["system"], x["content"], run["criteria"])
+            r = await run_model(judge_mc, msgs, max_tokens=300, client=http_client)
+            v = parse_verdict(r.content) if r.status == "ok" else Verdict(None, r.error or "judge failed")
+            return {"id": x["id"], "judge_score": v.score, "judge_reason": v.reason}
+
+        gradable = [x for x in run["results"] if x["status"] == "ok" and x["content"]]
+        verdicts = await asyncio.gather(*(grade(x) for x in gradable))
+        with db.connect(db_path) as con:
+            for v in verdicts:
+                db.set_verdict(con, v["id"], v["judge_score"], v["judge_reason"], judge_mc.id)
+        return {"judge_model": judge_mc.id, "results": verdicts}
 
     @app.post("/api/results/{result_id}/rating")
     def rate(result_id: int, body: RatingRequest):

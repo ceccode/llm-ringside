@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS runs (
   created_at TEXT NOT NULL,
   prompt TEXT NOT NULL,
   system TEXT,
+  criteria TEXT,
   params TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS results (
@@ -35,9 +36,16 @@ CREATE TABLE IF NOT EXISTS results (
   ttft_ms REAL, ttfc_ms REAL, total_ms REAL,
   prompt_tokens INTEGER, completion_tokens INTEGER, reasoning_tokens INTEGER,
   tokens_estimated INTEGER, chunks INTEGER, tokens_per_s REAL,
-  rating INTEGER
+  rating INTEGER,
+  judge_score INTEGER, judge_reason TEXT, judge_model TEXT
 );
 """
+
+# Columns added after the first release. CREATE TABLE IF NOT EXISTS won't add them to an existing db.
+ADDED_COLS = {
+    "runs": {"criteria": "TEXT"},
+    "results": {"judge_score": "INTEGER", "judge_reason": "TEXT", "judge_model": "TEXT"},
+}
 
 RESULT_COLS = [
     "model_id",
@@ -75,13 +83,23 @@ def connect(path: Path | str = DB_PATH) -> Connection:
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     con.executescript(SCHEMA)
+    _add_missing_columns(con)
     return con
 
 
-def create_run(con, prompt: str, system: str | None, params: dict) -> int:
+def _add_missing_columns(con) -> None:
+    for table, cols in ADDED_COLS.items():
+        present = {row["name"] for row in con.execute(f"PRAGMA table_info({table})")}
+        for name, type_ in cols.items():
+            if name not in present:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {type_}")
+    con.commit()
+
+
+def create_run(con, prompt: str, system: str | None, params: dict, criteria: str | None = None) -> int:
     cur = con.execute(
-        "INSERT INTO runs (created_at, prompt, system, params) VALUES (?, ?, ?, ?)",
-        (datetime.now(UTC).isoformat(timespec="seconds"), prompt, system, json.dumps(params)),
+        "INSERT INTO runs (created_at, prompt, system, criteria, params) VALUES (?, ?, ?, ?, ?)",
+        (datetime.now(UTC).isoformat(timespec="seconds"), prompt, system, criteria, json.dumps(params)),
     )
     con.commit()
     return cur.lastrowid
@@ -119,6 +137,14 @@ def get_run(con, run_id: int) -> dict | None:
 
 def set_rating(con, result_id: int, rating: int | None) -> None:
     con.execute("UPDATE results SET rating = ? WHERE id = ?", (rating, result_id))
+    con.commit()
+
+
+def set_verdict(con, result_id: int, score: int | None, reason: str, judge_model: str) -> None:
+    con.execute(
+        "UPDATE results SET judge_score = ?, judge_reason = ?, judge_model = ? WHERE id = ?",
+        (score, reason, judge_model, result_id),
+    )
     con.commit()
 
 

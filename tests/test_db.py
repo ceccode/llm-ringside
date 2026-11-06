@@ -25,3 +25,32 @@ def test_round_trip_rating_and_delete(tmp_path):
         db.delete_run(con, run_id)
         assert db.list_runs(con) == []
         assert con.execute("SELECT COUNT(*) FROM results").fetchone()[0] == 0  # cascade
+
+
+def test_criteria_and_verdict_round_trip(tmp_path):
+    with db.connect(tmp_path / "t.db") as con:
+        run_id = db.create_run(con, "p", None, {}, criteria="must say 4")
+        rid = db.save_result(con, run_id, Result("fake/ok").to_dict())
+        db.set_verdict(con, rid, 4, "fine", "fake/judge")
+        run = db.get_run(con, run_id)
+        assert run["criteria"] == "must say 4"
+        x = run["results"][0]
+        assert (x["judge_score"], x["judge_reason"], x["judge_model"]) == (4, "fine", "fake/judge")
+
+
+def test_connect_migrates_a_pre_judge_db(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    old = db.SCHEMA
+    for cols in db.ADDED_COLS.values():
+        for name in cols:
+            old = "\n".join(line for line in old.splitlines() if name not in line)
+    old = old.replace("rating INTEGER,", "rating INTEGER")
+    with sqlite3.connect(path) as raw:
+        raw.executescript(old)
+        raw.execute("INSERT INTO runs (created_at, prompt, params) VALUES ('t', 'p', '{}')")
+    with db.connect(path) as con:
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(results)")}
+        assert {"judge_score", "judge_reason", "judge_model"} <= cols
+        assert db.get_run(con, 1)["criteria"] is None

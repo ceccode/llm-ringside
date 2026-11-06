@@ -1,7 +1,7 @@
 """A fake OpenAI-compatible provider served in-process through httpx's ASGI transport.
 
 The model name picks the behaviour, so a test reads like a scenario:
-  ok | nousage | nodone | inerror | http429 | missingkey
+  ok | nousage | nodone | inerror | http429 | missingkey | judge (answers with a verdict JSON)
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from bench.config import ModelConfig, Provider
 
-SCENARIOS = ["ok", "nousage", "nodone", "inerror", "http429"]
+SCENARIOS = ["ok", "nousage", "nodone", "inerror", "http429", "judge"]
 
 
 def chunk(delta: dict, finish: str | None = None, usage: dict | None = None) -> str:
@@ -48,7 +48,10 @@ def fake_provider() -> FastAPI:
             if mode == "ok":
                 for w in ["Let me ", "think."]:
                     yield chunk({"reasoning": w})
-            for i, w in enumerate(["Hello", " world", "!"]):
+            words = (
+                ['{"score": 4, ', '"reason": "Clear and correct."}'] if mode == "judge" else ["Hello", " world", "!"]
+            )
+            for i, w in enumerate(words):
                 if mode == "inerror" and i == 2:
                     yield (
                         "data: "

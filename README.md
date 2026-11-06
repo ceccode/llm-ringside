@@ -56,10 +56,27 @@ Anthropic is reached through its OpenAI-compatible endpoint, so one adapter cove
 | **out tokens** | `usage.completion_tokens`, with reasoning tokens in parentheses when reported |
 | **pill** | `stop`, `length`, `tool_calls`, or `error` (hover for the reason) |
 | **footer** | HTTP status, prompt tokens, `no [DONE]` when a stream closed without the sentinel, provider request id |
+| **stars** | your own 1–5 rating, saved per result |
+| **judge** | 1–5 score and one-sentence reason from a judge model, see below |
 
-Errors are first-class results: HTTP refusals, error events inside the stream, timeouts and
-streams that end without `[DONE]` are all recorded and shown. **repeat** sends the same prompt
-N times per model to see variance.
+Errors are first-class results: HTTP refusals, error events inside the stream, timeouts and streams that end without `[DONE]` are all recorded and shown. **repeat** sends the same prompt N times per model to see variance.
+
+## LLM as a judge
+
+Speed and reliability are measured; quality is judged. Press **Judge** under a run (also on runs
+reopened from history) and a judge model of your choice grades every successful answer from 1 to 5
+with a one-sentence reason. Re-judging overwrites the previous verdict.
+
+What the judge sees: the prompt, the system prompt if any, the optional **judge criteria** you wrote
+for the run (an expected answer or what matters) and the answer. It never sees the model's reasoning.
+The rubric lives in [`bench/judge.py`](bench/judge.py); it is deliberately short.
+
+Judges are biased in known ways, and the tool only mitigates some of them:
+
+- *Verbosity*: the rubric says not to reward length. Still, read the reasons.
+- *Noise*: the judge must answer in JSON and is sampled with the provider's defaults (newer Claude models reject `temperature`). Unparseable verdicts show as `–` with the raw text; re-judge to see how stable a score is.
+- *Self-preference*: pick a judge that is not among the judged models. The UI warns when it is.
+- *Thinking judges*: a model that reasons before answering may spend its 300-token budget thinking and return no JSON. Use a non-thinking variant as judge.
 
 ## How it works
 
@@ -67,21 +84,22 @@ N times per model to see variance.
 bench/
   config.py   models.yaml + .env  →  Provider / ModelConfig
   stream.py   SSE payloads in, Result out. Pure: no I/O, no clock
+  judge.py    grading prompt in, Verdict out. Pure too
   runner.py   httpx streaming; timestamps each payload and feeds stream.Result
   db.py       SQLite, two tables: runs and results
-  app.py      FastAPI: /api/run fans a prompt out to N models and relays SSE to the browser
+  app.py      FastAPI: /api/run fans a prompt out to N models and relays SSE; /api/runs/{id}/judge grades a run
 static/index.html   the whole UI, vanilla JS
 ```
 
-The design rule is simple: everything that decides *what we report* sits in `stream.py` and takes
-plain values, while `runner.py` and `app.py` only move bytes. That is what keeps the tests fast and
+The design rule is simple: everything that decides *what we report* sits in `stream.py` and
+`judge.py` and takes plain values, while `runner.py` and `app.py` only move bytes. That is what keeps the tests fast and
 the code small.
 
 ## Development
 
 ```bash
 uv sync --group dev
-uv run pytest          # ~20 tests, < 1 s, no network, no keys
+uv run pytest          # ~35 tests, < 1 s, no network, no keys
 uv run ruff check .
 ```
 
@@ -94,7 +112,7 @@ provider quirk means adding a scenario there and a test next to it.
 ## Not in scope (yet)
 
 - Cost per run: usage is recorded, prices are not. Easy to add if you need it.
-- Batch suites and LLM-as-judge scoring: today the quality signal is your own 1–5 rating.
+- Batch suites: one prompt at a time, by design. Pairwise judging would be the next step if pointwise scores drift.
 
 ## License
 
