@@ -4,4 +4,4 @@ __pycache__/
 *.db
 .claude/
 # vendor docs export, not redistributed
-docs/
+docs/xference.md

@@ -7,6 +7,11 @@ Built to compare [Xference](https://www.xference.ai) with Anthropic, OpenAI and 
 but it works with any endpoint that speaks the OpenAI `chat/completions` format.
 No framework, no build step: a FastAPI server, a SQLite file and one HTML page.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
+  <img alt="Six models running the meeting-retry agentic task side by side: tool-call traces, timings, machine checks and judge scores in each card" src="docs/screenshot-light.png">
+</picture>
+
 ## Quick start
 
 ```bash
@@ -77,7 +82,7 @@ Judges are biased in known ways, and the tool only mitigates some of them:
 - *Verbosity*: the rubric says not to reward length. Still, read the reasons.
 - *Noise*: the judge must answer in JSON and is sampled with the provider's defaults (newer Claude models reject `temperature`). Unparseable verdicts show as `–` with the raw text; re-judge to see how stable a score is.
 - *Self-preference*: pick a judge that is not among the judged models. The UI warns when it is.
-- *Thinking judges*: a model that reasons before answering may spend its 300-token budget thinking and return no JSON. Use a non-thinking variant as judge.
+- *Thinking judges*: some models reason before answering, visibly or not (Claude 5.5 does it silently over the OpenAI endpoint). The judge gets 2048 tokens for that; if it still runs out, the card says so instead of showing a score.
 
 ## Agentic tasks
 
