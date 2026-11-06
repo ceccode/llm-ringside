@@ -58,6 +58,7 @@ Anthropic is reached through its OpenAI-compatible endpoint, so one adapter cove
 | **footer** | HTTP status, prompt tokens, `no [DONE]` when a stream closed without the sentinel, provider request id |
 | **stars** | your own 1–5 rating, saved per result |
 | **judge** | 1–5 score and one-sentence reason from a judge model, see below |
+| **check** | agentic tasks only: share of machine checks passed, failed ones listed by name |
 
 Errors are first-class results: HTTP refusals, error events inside the stream, timeouts and streams that end without `[DONE]` are all recorded and shown. **repeat** sends the same prompt N times per model to see variance.
 
@@ -78,6 +79,51 @@ Judges are biased in known ways, and the tool only mitigates some of them:
 - *Self-preference*: pick a judge that is not among the judged models. The UI warns when it is.
 - *Thinking judges*: a model that reasons before answering may spend its 300-token budget thinking and return no JSON. Use a non-thinking variant as judge.
 
+## Agentic tasks
+
+Prose needs a judge; tool use has an oracle. Pick a **task** instead of writing a prompt and every
+model runs it as a multi-turn conversation with mocked tools: the model asks for a tool, the bench
+answers from canned responses, and so on until the model replies in plain text or runs out of turns.
+The trace of calls shows live in each card, then a deterministic **check** scores the episode.
+
+A task is one YAML file in [`tasks/`](tasks/):
+
+```yaml
+id: order-status
+prompt: What's the status of the most recent order placed by mario.rossi@example.com?
+max_steps: 6                       # model turns before we stop
+tools:
+  - name: find_customer
+    description: Look up a customer by email address.
+    parameters: {type: object, properties: {email: {type: string}}, required: [email]}
+    responses:                     # first match wins; `when` is a subset of the arguments
+      - when: {email: mario.rossi@example.com}
+        return: {customer_id: C-42}
+      - return: {error: customer not found}
+expect:
+  ordered: true                    # expected calls must happen in this order (default false)
+  allow_extra: true                # false: any other call fails a check
+  calls:
+    - {name: find_customer, args: {email: mario.rossi@example.com}}
+  final_contains: [O-1017, [shipped, dispatched]]   # a nested list means "any of these"
+```
+
+The checks are: each expected call was made (arguments compared as trimmed, case-insensitive
+strings), no unexpected calls when `allow_extra` is false, every call well formed (known tool,
+JSON object, required arguments), each `final_contains` entry found in the answer, and the
+episode finished within `max_steps`. Malformed calls are not fatal: the model gets the error back
+as the tool result and can recover, the way a real agent would.
+
+| Task | What it probes |
+|---|---|
+| `order-status` | chained calls: the second needs a value returned by the first |
+| `weather-compare` | two independent lookups, then arithmetic on the results |
+| `no-tool-needed` | restraint: tools are offered, none should be used |
+| `meeting-retry` | recovery: the first booking is refused, the model must read why and retry |
+
+For an episode, TTFT is the first token of the first turn, while total time, tokens and tok/s cover
+all turns. The judge still works on task runs and grades the final answer.
+
 ## How it works
 
 ```
@@ -85,21 +131,24 @@ bench/
   config.py   models.yaml + .env  →  Provider / ModelConfig
   stream.py   SSE payloads in, Result out. Pure: no I/O, no clock
   judge.py    grading prompt in, Verdict out. Pure too
+  tasks.py    task YAML in; tool mocks and episode scoring out. Pure too
   runner.py   httpx streaming; timestamps each payload and feeds stream.Result
+  episode.py  the multi-turn loop: run_model, answer tool calls from the mocks, repeat
   db.py       SQLite, two tables: runs and results
   app.py      FastAPI: /api/run fans a prompt out to N models and relays SSE; /api/runs/{id}/judge grades a run
 static/index.html   the whole UI, vanilla JS
 ```
 
-The design rule is simple: everything that decides *what we report* sits in `stream.py` and
-`judge.py` and takes plain values, while `runner.py` and `app.py` only move bytes. That is what keeps the tests fast and
+The design rule is simple: everything that decides *what we report* sits in `stream.py`,
+`judge.py` and `tasks.py` and takes plain values, while `runner.py`, `episode.py` and `app.py`
+only move bytes. That is what keeps the tests fast and
 the code small.
 
 ## Development
 
 ```bash
 uv sync --group dev
-uv run pytest          # ~35 tests, < 1 s, no network, no keys
+uv run pytest          # ~55 tests, < 1 s, no network, no keys
 uv run ruff check .
 ```
 
@@ -107,12 +156,13 @@ Tests talk to a fake OpenAI-compatible provider served in-process through httpx'
 (see [`tests/conftest.py`](tests/conftest.py)). The model name selects a scenario, so adding a
 provider quirk means adding a scenario there and a test next to it.
 
-`BENCH_MODELS_YAML=/path/to/other.yaml` points the server at a different model list.
+`BENCH_MODELS_YAML=/path/to/other.yaml` points the server at a different model list, `BENCH_TASKS_DIR` at a different task folder.
 
 ## Not in scope (yet)
 
 - Cost per run: usage is recorded, prices are not. Easy to add if you need it.
-- Batch suites: one prompt at a time, by design. Pairwise judging would be the next step if pointwise scores drift.
+- Batch suites: one prompt or task at a time, by design. Pairwise judging would be the next step if pointwise scores drift.
+- Coding tasks: planned as `tasks/` entries with hidden pytest tests, run in a subprocess with a timeout. Note that this means running model-written code on your machine.
 
 ## License
 

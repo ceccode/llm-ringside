@@ -13,12 +13,15 @@ from pydantic import BaseModel, Field
 
 from . import db
 from .config import ROOT, ModelConfig, load
+from .episode import run_episode
 from .judge import Verdict, build_messages, parse_verdict
 from .runner import run_model
+from .tasks import Task, load_tasks
 
 
 class RunRequest(BaseModel):
-    prompt: str
+    prompt: str = ""
+    task_id: str | None = None  # an agentic task from tasks/; its prompt and system replace these
     system: str | None = None
     criteria: str | None = None  # grading criteria / expected answer, read by the judge only
     model_ids: list[str] = Field(min_length=1)
@@ -44,8 +47,10 @@ def create_app(
     models: dict[str, ModelConfig],
     db_path: Path | str = db.DB_PATH,
     http_client: httpx.AsyncClient | None = None,
+    tasks: dict[str, Task] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="ai-benchmark")
+    tasks = tasks or {}
 
     @app.get("/")
     def index():
@@ -55,28 +60,42 @@ def create_app(
     def list_models():
         return [m.public() for m in models.values()]
 
+    @app.get("/api/tasks")
+    def list_tasks():
+        return [t.public() for t in tasks.values()]
+
     @app.post("/api/run")
     async def run(req: RunRequest):
         unknown = [m for m in req.model_ids if m not in models]
         if unknown:
             raise HTTPException(400, f"unknown model ids: {unknown}")
+        task = None
+        if req.task_id:
+            task = tasks.get(req.task_id)
+            if not task:
+                raise HTTPException(400, f"unknown task id: {req.task_id}")
+            req.prompt, req.system = task.prompt, task.system
+        elif not req.prompt.strip():
+            raise HTTPException(400, "prompt is empty")
 
         con = db.connect(db_path)
-        params = req.model_dump(exclude={"prompt", "system", "criteria"})
-        run_id = db.create_run(con, req.prompt, req.system, params, criteria=req.criteria)
+        params = req.model_dump(exclude={"prompt", "system", "criteria", "task_id"})
+        run_id = db.create_run(con, req.prompt, req.system, params, criteria=req.criteria, task_id=req.task_id)
         queue: asyncio.Queue[dict | None] = asyncio.Queue()
 
         async def one(model_id: str, rep: int):
-            result = await run_model(
-                models[model_id],
-                req.messages(),
-                max_tokens=req.max_tokens,
-                temperature=req.temperature,
-                timeout_s=req.timeout_s,
-                rep=rep,
-                emit=queue.put,
-                client=http_client,
-            )
+            common = {
+                "max_tokens": req.max_tokens,
+                "temperature": req.temperature,
+                "timeout_s": req.timeout_s,
+                "rep": rep,
+                "emit": queue.put,
+                "client": http_client,
+            }
+            if task:
+                result = await run_episode(models[model_id], task, **common)
+            else:
+                result = await run_model(models[model_id], req.messages(), **common)
             d = result.to_dict()
             d["id"] = db.save_result(con, run_id, d)
             await queue.put({"type": "result", "model_id": model_id, "rep": rep, "result": d})
@@ -159,4 +178,4 @@ def _sse(obj: dict) -> str:
     return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
 
 
-app = create_app(load()[1])
+app = create_app(load()[1], tasks=load_tasks())

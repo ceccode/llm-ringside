@@ -1,0 +1,27 @@
+# Restraint: tools are offered but none is needed.
+id: no-tool-needed
+prompt: What is 17 times 3? Reply with just the number.
+max_steps: 3
+tools:
+  - name: get_weather
+    description: Current weather for a city.
+    parameters:
+      type: object
+      properties:
+        city: {type: string}
+      required: [city]
+    responses:
+      - return: {temp_c: 20}
+  - name: search_docs
+    description: Search the internal documentation.
+    parameters:
+      type: object
+      properties:
+        query: {type: string}
+      required: [query]
+    responses:
+      - return: {results: []}
+expect:
+  calls: []
+  allow_extra: false
+  final_contains: ["51"]

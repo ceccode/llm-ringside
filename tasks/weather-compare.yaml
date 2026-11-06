@@ -1,0 +1,27 @@
+# Two independent lookups, then arithmetic on the results.
+id: weather-compare
+prompt: Which is warmer right now, Rome or Oslo, and by how much? Give the temperatures in Fahrenheit.
+max_steps: 5
+tools:
+  - name: get_weather
+    description: Current weather for a city. Temperatures are in Celsius.
+    parameters:
+      type: object
+      properties:
+        city: {type: string, description: City name in English}
+      required: [city]
+    responses:
+      - when: {city: Rome}
+        return: {city: Rome, temp_c: 21, sky: clear}
+      - when: {city: Oslo}
+        return: {city: Oslo, temp_c: 4, sky: rain}
+      - return: {error: unknown city}
+expect:
+  calls:
+    - {name: get_weather, args: {city: Rome}}
+    - {name: get_weather, args: {city: Oslo}}
+  final_contains:
+    - Rome
+    - ["69.8", "70"]
+    - ["39.2", "39"]
+    - ["30.6", "31"]

@@ -54,3 +54,19 @@ def test_connect_migrates_a_pre_judge_db(tmp_path):
         cols = {r["name"] for r in con.execute("PRAGMA table_info(results)")}
         assert {"judge_score", "judge_reason", "judge_model"} <= cols
         assert db.get_run(con, 1)["criteria"] is None
+
+
+def test_agentic_fields_round_trip(tmp_path):
+    with db.connect(tmp_path / "t.db") as con:
+        run_id = db.create_run(con, "p", None, {}, task_id="order-status")
+        r = Result("fake/agent", steps=2, check_score=0.5)
+        r.tool_calls = [{"step": 1, "name": "find_customer", "args": {"email": "x"}, "valid": True}]
+        r.check_detail = [{"ok": True, "label": "a"}, {"ok": False, "label": "b"}]
+        db.save_result(con, run_id, r.to_dict())
+        db.save_result(con, run_id, Result("fake/ok").to_dict())
+        run = db.get_run(con, run_id)
+        assert run["task_id"] == "order-status" and db.list_runs(con)[0]["task_id"] == "order-status"
+        agent, plain = sorted(run["results"], key=lambda x: x["model_id"])
+        assert agent["tool_calls"][0]["args"] == {"email": "x"} and agent["steps"] == 2
+        assert agent["check_detail"][1] == {"ok": False, "label": "b"} and agent["check_score"] == 0.5
+        assert plain["tool_calls"] is None and plain["check_detail"] is None

@@ -6,11 +6,27 @@ import pytest
 from fastapi.testclient import TestClient
 
 from bench.app import create_app
+from bench.tasks import Expect, Task, Tool
+
+LOOKUP = Task(
+    "lookup",
+    "Status of Mario's order?",
+    [
+        Tool(
+            "find_customer",
+            "Look up a customer.",
+            {"type": "object", "properties": {"email": {"type": "string"}}, "required": ["email"]},
+            [{"return": {"customer_id": "C-42"}}],
+        )
+    ],
+    Expect(calls=[{"name": "find_customer", "args": {"email": "mario@example.com"}}], final_contains=["shipped"]),
+)
 
 
 @pytest.fixture
 def client(models, http_client, tmp_path):
-    return TestClient(create_app(models, db_path=tmp_path / "t.db", http_client=http_client))
+    app = create_app(models, db_path=tmp_path / "t.db", http_client=http_client, tasks={"lookup": LOOKUP})
+    return TestClient(app)
 
 
 def events(resp):
@@ -87,3 +103,34 @@ def test_judge_rejects_bad_ids(client):
     assert client.post(f"/api/runs/{run_id}/judge", json={"judge_model_id": "nope"}).status_code == 400
     assert client.post(f"/api/runs/{run_id}/judge", json={"judge_model_id": "fake/missingkey"}).status_code == 400
     assert client.post("/api/runs/999/judge", json={"judge_model_id": "fake/judge"}).status_code == 404
+
+
+def test_tasks_endpoint(client):
+    assert client.get("/api/tasks").json() == [
+        {"id": "lookup", "prompt": "Status of Mario's order?", "tools": ["find_customer"], "max_steps": 6}
+    ]
+
+
+def test_task_run_streams_tool_events_and_persists_the_check(client):
+    resp = client.post("/api/run", json={"task_id": "lookup", "model_ids": ["fake/agent", "fake/ok"]})
+    evs = events(resp)
+    tools = [e for e in evs if e["type"] == "tool"]
+    assert [(t["model_id"], t["name"], t["valid"]) for t in tools] == [("fake/agent", "find_customer", True)]
+
+    detail = client.get(f"/api/runs/{evs[0]['run_id']}").json()
+    assert detail["task_id"] == "lookup" and detail["prompt"] == "Status of Mario's order?"
+    by_model = {x["model_id"]: x for x in detail["results"]}
+    agent, plain = by_model["fake/agent"], by_model["fake/ok"]
+    assert (
+        agent["steps"] == 2
+        and agent["check_score"] == 1.0
+        and agent["tool_calls"][0]["result"] == '{"customer_id": "C-42"}'
+    )
+    assert plain["steps"] == 1 and plain["check_score"] < 1 and plain["tool_calls"] is None
+    assert all(item["ok"] for item in agent["check_detail"])
+
+
+def test_run_needs_a_prompt_or_a_known_task(client):
+    assert client.post("/api/run", json={"model_ids": ["fake/ok"]}).status_code == 400
+    assert client.post("/api/run", json={"prompt": "  ", "model_ids": ["fake/ok"]}).status_code == 400
+    assert client.post("/api/run", json={"task_id": "nope", "model_ids": ["fake/ok"]}).status_code == 400

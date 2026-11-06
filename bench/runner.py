@@ -15,7 +15,12 @@ Emit = Callable[[dict], Awaitable[None]]
 
 
 def build_request(
-    mc: ModelConfig, messages: list[dict], *, max_tokens: int, temperature: float | None
+    mc: ModelConfig,
+    messages: list[dict],
+    *,
+    max_tokens: int,
+    temperature: float | None,
+    tools: list[dict] | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
         "model": mc.model,
@@ -26,6 +31,9 @@ def build_request(
     }
     if temperature is not None:
         body["temperature"] = temperature
+    if tools:
+        body["tools"] = tools
+        body["tool_choice"] = "auto"
     body.update(mc.extra)
     return body
 
@@ -40,6 +48,7 @@ async def run_model(
     rep: int = 0,
     emit: Emit | None = None,
     client: httpx.AsyncClient | None = None,
+    tools: list[dict] | None = None,
 ) -> Result:
     """One streamed chat completion, measured. `client` is injectable for tests."""
     result = Result(model_id=mc.id, rep=rep)
@@ -49,7 +58,7 @@ async def run_model(
         result.close(0)
         return result
 
-    body = build_request(mc, messages, max_tokens=max_tokens, temperature=temperature)
+    body = build_request(mc, messages, max_tokens=max_tokens, temperature=temperature, tools=tools)
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     url = f"{mc.provider.base_url}/chat/completions"
     timeout = httpx.Timeout(timeout_s, connect=15)

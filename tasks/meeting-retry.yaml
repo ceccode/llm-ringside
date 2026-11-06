@@ -1,0 +1,29 @@
+# Recovery: the first attempt is refused, the model must read the error and retry.
+id: meeting-retry
+prompt: >-
+  Today is Friday 2026-11-06. Book a 30 minute meeting with Anna next Monday at 3pm.
+  If that slot is taken, book the first free slot after it the same day.
+max_steps: 5
+tools:
+  - name: book_meeting
+    description: Book a meeting. Fails if the slot is not free.
+    parameters:
+      type: object
+      properties:
+        with: {type: string, description: Attendee name}
+        date: {type: string, description: "YYYY-MM-DD"}
+        time: {type: string, description: "HH:MM, 24-hour"}
+        duration_min: {type: integer}
+      required: [with, date, time, duration_min]
+    responses:
+      - when: {date: "2026-11-09", time: "16:00"}
+        return: {booked: true, id: M-7, date: "2026-11-09", time: "16:00"}
+      - when: {date: "2026-11-09"}
+        return: {booked: false, error: "slot taken", free_slots: ["16:00", "17:30"]}
+      - return: {booked: false, error: "Anna is not available that day"}
+expect:
+  ordered: true
+  calls:
+    - {name: book_meeting, args: {date: "2026-11-09", time: "15:00"}}
+    - {name: book_meeting, args: {date: "2026-11-09", time: "16:00"}}
+  final_contains: [["16:00", "4:00", "4pm", "4 pm"]]  # "4:00" covers 4:00pm, 4:00 PM, 4:00–4:30

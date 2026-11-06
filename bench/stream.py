@@ -8,7 +8,7 @@ decided here.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 DONE = "[DONE]"
 
@@ -41,6 +41,12 @@ class Result:
     tokens_estimated: bool = False  # no usage from provider: chunk count used
     chunks: int = 0
     tokens_per_s: float | None = None
+    # Tool calls the model asked for, merged from streamed fragments: {index, id, name, arguments}.
+    # An agentic episode replaces this with its full trace (see episode.py).
+    tool_calls: list[dict] = field(default_factory=list)
+    steps: int | None = None  # model turns in an agentic episode; None for a plain prompt
+    check_score: float | None = None  # agentic tasks: share of checks passed (see tasks.score)
+    check_detail: list[dict] | None = None  # [{ok, label}]
 
     # -- building -----------------------------------------------------------
 
@@ -85,7 +91,25 @@ class Result:
                 self.content += content
                 self.chunks += 1
                 delta_out["content"] = delta_out.get("content", "") + content
+            for frag in delta.get("tool_calls") or []:
+                self._first_token(elapsed_ms)
+                self.chunks += 1
+                call = self._merge_tool_call(frag)
+                delta_out["tool_call"] = {k: call[k] for k in ("index", "name", "arguments")}
         return delta_out or None
+
+    def _merge_tool_call(self, frag: dict) -> dict:
+        """Providers stream a call as fragments sharing an index: name once, arguments in pieces."""
+        index = frag.get("index", len(self.tool_calls))
+        call = next((c for c in self.tool_calls if c["index"] == index), None)
+        if call is None:
+            call = {"index": index, "id": None, "name": "", "arguments": ""}
+            self.tool_calls.append(call)
+        fn = frag.get("function") or {}
+        call["id"] = frag.get("id") or call["id"]
+        call["name"] += fn.get("name") or ""
+        call["arguments"] += fn.get("arguments") or ""
+        return call
 
     def close(self, elapsed_ms: float) -> None:
         """Stream is over (cleanly or not): derive the final numbers."""

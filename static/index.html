@@ -93,8 +93,15 @@
   .stars svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
   .stars button.on { color: var(--star); } .stars button.on svg { fill: currentColor; }
   .meta { margin-left: auto; color: var(--muted); font-size: 12px; font-family: ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
-  .verdict { font-size: 13px; color: var(--muted); }
-  .verdict b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .verdict, .check { font-size: 13px; color: var(--muted); }
+  .verdict b, .check b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .check .fail { color: var(--err); }
+  .trace { list-style: none; margin: 0 0 10px; padding: 0; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .trace li { padding: 4px 0; border-bottom: 1px dashed var(--line); overflow-wrap: anywhere; }
+  .trace li .ret { display: block; color: var(--muted); padding-left: 1.5em; }
+  .trace li.bad, .trace li.bad .ret { color: var(--err); }
+  .trace .n { color: var(--muted); }
+  textarea[readonly] { background: transparent; border-style: dashed; color: var(--muted); }
 
   .table-wrap { overflow-x: auto; margin-top: 12px; }
   table { border-collapse: collapse; width: 100%; }
@@ -126,13 +133,17 @@
 </header>
 
 <main id="bench">
+  <div class="row" style="margin-top:4px">
+    <label for="task">task <select id="task"><option value="">free prompt</option></select></label>
+    <span class="hint" id="task-hint"></span>
+  </div>
   <label class="field" for="prompt"><span>Prompt</span>
     <textarea id="prompt" placeholder="What should every model answer?"></textarea></label>
   <details><summary>system prompt</summary>
     <label class="field" for="system"><span>Sent to every model as the system message.</span>
       <textarea id="system" style="min-height:60px" placeholder="optional"></textarea></label>
   </details>
-  <details><summary>judge criteria</summary>
+  <details id="criteria-box"><summary>judge criteria</summary>
     <label class="field" for="criteria"><span>Expected answer or grading criteria. Only the judge reads this, never the models.</span>
       <textarea id="criteria" style="min-height:60px" placeholder="optional"></textarea></label>
   </details>
@@ -174,7 +185,8 @@ const esc = s => (s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
 const key = (m, r) => `${m}#${r}`;
 const when = iso => iso.replace('T', ' ').slice(0, 16);
 const STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.6 6.1.7-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.8l6.1-.7z"/></svg>';
-let MODELS = [], cards = {}, currentRun = null, runModels = new Set(), running = false, judging = false;
+let MODELS = [], TASKS = {}, cards = {}, currentRun = null, runModels = new Set(), running = false, judging = false;
+let freePrompt = '';  // what the user typed before picking a task, given back when they switch away
 const status = t => { $('#status').textContent = t; };
 
 // ---- models ----
@@ -189,12 +201,33 @@ async function loadModels() {
         <input type="checkbox" value="${esc(m.id)}" ${m.has_key ? '' : 'disabled'} ${saved.has(m.id) ? 'checked' : ''}>
         <span class="id">${esc(m.id)}</span>${m.has_key ? '' : ' <small>(no key)</small>'}</label>`).join('')}
     </fieldset>`).join('');
+  const tasks = await (await fetch('/api/tasks')).json();
+  TASKS = Object.fromEntries(tasks.map(t => [t.id, t]));
+  $('#task').innerHTML = '<option value="">free prompt</option>' +
+    tasks.map(t => `<option value="${esc(t.id)}">${esc(t.id)}</option>`).join('');
+  const savedTask = localStorage.getItem('task');
+  if (TASKS[savedTask]) { $('#task').value = savedTask; applyTask(); }
   const savedJudge = localStorage.getItem('judge');
   $('#judge').innerHTML = MODELS.filter(m => m.has_key)
     .map(m => `<option value="${esc(m.id)}" ${m.id === savedJudge ? 'selected' : ''}>${esc(m.id)}</option>`).join('');
   refresh();
 }
 const selected = () => [...document.querySelectorAll('#models input:checked')].map(i => i.value);
+
+// A task owns the prompt: show it read-only, say what the run will do, keep the user's own text safe.
+function applyTask() {
+  const t = TASKS[$('#task').value], p = $('#prompt');
+  if (t) {
+    if (!p.readOnly) freePrompt = p.value;
+    p.value = t.prompt; p.readOnly = true;
+    $('#task-hint').textContent = `tools: ${t.tools.join(', ')} · up to ${t.max_steps} turns · scored automatically`;
+  } else {
+    if (p.readOnly) p.value = freePrompt;
+    p.readOnly = false; $('#task-hint').textContent = '';
+  }
+  $('#criteria-box').classList.toggle('hidden', !!t);
+  refresh();
+}
 
 // Constraints with a visible reason: a disabled button always says why (Norman).
 function refresh() {
@@ -226,11 +259,13 @@ function card(model_id, rep, repeat) {
     </dl>
     <div class="body">
       <details class="reasoning hidden"><summary>reasoning</summary><pre></pre></details>
+      <ol class="trace hidden" aria-label="tool calls"></ol>
       <pre class="content"></pre>
       <div class="errmsg hidden" role="alert"></div>
     </div>
     <div class="foot hidden">
       <div class="line"><span class="stars" role="radiogroup" aria-label="your rating"></span><span class="meta"></span></div>
+      <div class="check hidden"></div>
       <div class="verdict hidden"></div>
     </div>`;
   $('#grid').appendChild(el);
@@ -246,6 +281,19 @@ function applyDelta(ev) {
     d.querySelector('pre').textContent = c.reasoning;
   }
   if (ev.content) { c.content += ev.content; c.el.querySelector('.content').textContent = c.content; }
+  if (ev.tool_call?.name) c.el.querySelector('.pill').textContent = `calling ${ev.tool_call.name}`;
+}
+
+function traceItem(t) {
+  const li = document.createElement('li');
+  if (!t.valid) li.className = 'bad';
+  li.innerHTML = `<span class="n">${t.step}.</span> ${esc(t.name)}(${esc(t.arguments)})<span class="ret">${esc(t.result)}</span>`;
+  return li;
+}
+function applyTool(ev) {
+  const c = cards[key(ev.model_id, ev.rep)]; if (!c) return;
+  const ol = c.el.querySelector('.trace'); ol.classList.remove('hidden'); ol.appendChild(traceItem(ev));
+  c.el.querySelector('.pill').textContent = 'running';
 }
 
 function applyResult(r) {
@@ -261,9 +309,14 @@ function applyResult(r) {
   if (r.content != null) { c.content = r.content; q('.content').textContent = r.content; }
   if (r.reasoning) { c.reasoning = r.reasoning; q('.reasoning').classList.remove('hidden'); q('.reasoning pre').textContent = r.reasoning; }
   if (r.error) { const e = q('.errmsg'); e.classList.remove('hidden'); e.textContent = r.error; }
+  if (r.tool_calls?.length) {
+    const ol = q('.trace'); ol.classList.remove('hidden'); ol.replaceChildren(...r.tool_calls.map(traceItem));
+  }
+  if (r.finish_reason === 'max_steps') pill.textContent = 'max turns';
 
   const foot = q('.foot'); foot.classList.remove('hidden');
   q('.meta').textContent = [r.http_status && `HTTP ${r.http_status}`, r.prompt_tokens != null && `in ${r.prompt_tokens}`,
+    r.steps != null && `${r.steps} turn${r.steps === 1 ? '' : 's'}`,
     r.http_status === 200 && !r.stream_complete ? 'no [DONE]' : null, r.request_id].filter(Boolean).join(' · ');
 
   const stars = q('.stars');
@@ -275,6 +328,16 @@ function applyResult(r) {
     const v = +b.dataset.v, nv = v === r.rating ? null : v; r.rating = nv; paint(nv);
     await fetch(`/api/results/${r.id}/rating`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ rating: nv }) });
   };
+
+  const ck = q('.check'), items = r.check_detail || [];
+  ck.classList.toggle('hidden', !items.length);
+  if (items.length) {
+    const failed = items.filter(i => !i.ok);
+    ck.innerHTML = `check <b>${items.length - failed.length}/${items.length}</b> · ` + (failed.length
+      ? failed.map(i => `<span class="fail">${esc(i.label)}</span>`).join(', ')
+      : 'all checks passed');
+    ck.title = items.map(i => `${i.ok ? 'ok' : 'failed'}: ${i.label}`).join('\n');
+  }
 
   const v = q('.verdict');
   v.classList.toggle('hidden', !r.judge_model);
@@ -288,7 +351,9 @@ async function run() {
   const model_ids = selected(), prompt = $('#prompt').value.trim();
   localStorage.setItem('sel', JSON.stringify(model_ids));
   const repeat = +$('#repeat').value || 1, temp = $('#temperature').value;
-  const body = { prompt, system: $('#system').value.trim() || null, criteria: $('#criteria').value.trim() || null,
+  const task_id = $('#task').value || null;
+  const body = { prompt, task_id, system: $('#system').value.trim() || null,
+    criteria: task_id ? null : $('#criteria').value.trim() || null,
     model_ids, repeat, max_tokens: +$('#max_tokens').value || 1024, temperature: temp === '' ? null : +temp,
     timeout_s: +$('#timeout').value || 180 };
 
@@ -310,6 +375,7 @@ async function run() {
         const ev = JSON.parse(line.slice(5));
         if (ev.type === 'delta') applyDelta(ev);
         else if (ev.type === 'result') applyResult(ev.result);
+        else if (ev.type === 'tool') applyTool(ev);
         else if (ev.type === 'run') { currentRun = ev.run_id; status(`run #${ev.run_id} · running ${model_ids.length * repeat} ${repeat > 1 ? 'jobs' : 'models'}…`); }
         else if (ev.type === 'done') status(`run #${ev.run_id} · done`);
       }
@@ -340,7 +406,7 @@ async function showHistory() {
   const runs = await (await fetch('/api/runs')).json();
   $('#runs').innerHTML = runs.map(r => `
     <tr><td>${r.id}</td><td class="muted when">${when(r.created_at)}</td>
-      <td class="prompt"><a href="#run/${r.id}" title="${esc(r.prompt)}">${esc(r.prompt)}</a></td><td>${r.n}</td>
+      <td class="prompt"><a href="#run/${r.id}" title="${esc(r.prompt)}">${r.task_id ? `<span class="mono muted">${esc(r.task_id)}</span> · ` : ''}${esc(r.prompt)}</a></td><td>${r.n}</td>
       <td>${r.errors ? `<span class="pill error">${r.errors}</span>` : ''}</td>
       <td><button type="button" class="ghost del" data-id="${r.id}" aria-label="delete run #${r.id}">delete</button></td></tr>`).join('')
     || '<tr><td colspan="6" class="muted">No runs yet. Write a prompt, pick models and press Run.</td></tr>';
@@ -350,6 +416,7 @@ async function openRun(id) {
   nav('bench');
   if (!resp.ok) { status(`run #${id} not found`); return; }
   const r = await resp.json();
+  $('#task').value = TASKS[r.task_id] ? r.task_id : ''; applyTask();
   $('#prompt').value = r.prompt; $('#system').value = r.system || ''; $('#criteria').value = r.criteria || '';
   $('#max_tokens').value = r.params.max_tokens; $('#temperature').value = r.params.temperature ?? ''; $('#repeat').value = r.params.repeat;
   $('#grid').innerHTML = ''; cards = {}; currentRun = r.id; runModels = new Set(r.results.map(x => x.model_id));
@@ -380,6 +447,7 @@ for (const id of ['#prompt', '#system', '#criteria'])
   $(id).addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') run(); });
 $('#prompt').addEventListener('input', refresh);
 $('#models').addEventListener('change', () => { localStorage.setItem('sel', JSON.stringify(selected())); refresh(); });
+$('#task').addEventListener('change', () => { localStorage.setItem('task', $('#task').value); applyTask(); });
 $('#judge').addEventListener('change', () => { localStorage.setItem('judge', $('#judge').value); refresh(); });
 $('#runs').onclick = async e => {
   const del = e.target.closest('.del'); if (!del) return;

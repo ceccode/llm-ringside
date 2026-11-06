@@ -2,6 +2,7 @@
 
 The model name picks the behaviour, so a test reads like a scenario:
   ok | nousage | nodone | inerror | http429 | missingkey | judge (answers with a verdict JSON)
+  agent (calls find_customer, then answers once it gets the tool result) | agentfail (429 on turn 2)
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from bench.config import ModelConfig, Provider
 
-SCENARIOS = ["ok", "nousage", "nodone", "inerror", "http429", "judge"]
+SCENARIOS = ["ok", "nousage", "nodone", "inerror", "http429", "judge", "agent", "agentfail"]
 
 
 def chunk(delta: dict, finish: str | None = None, usage: dict | None = None) -> str:
@@ -38,19 +39,46 @@ def fake_provider() -> FastAPI:
     async def chat(req: Request):
         body = await req.json()
         mode = body["model"]
+        limited = JSONResponse(
+            {"type": "request_limited", "status_code": 429, "error": {"message": "slow down"}}, status_code=429
+        )
         if mode == "http429":
-            return JSONResponse(
-                {"type": "request_limited", "status_code": 429, "error": {"message": "slow down"}}, status_code=429
-            )
+            return limited
+
+        async def agent_call():
+            fn = {"name": "find_customer", "arguments": ""}
+            yield chunk({"tool_calls": [{"index": 0, "id": "call_a", "type": "function", "function": fn}]})
+            yield chunk({"tool_calls": [{"index": 0, "function": {"arguments": '{"email": '}}]})
+            yield chunk({"tool_calls": [{"index": 0, "function": {"arguments": '"mario@example.com"}'}}]})
+            yield chunk({}, finish="tool_calls")
+            yield chunk({}, usage={"prompt_tokens": 20, "completion_tokens": 8, "total_tokens": 28})
+            yield "data: [DONE]\n\n"
+
+        answered = False
+        if mode in ("agent", "agentfail"):
+            if "tools" not in body or body.get("tool_choice") != "auto":
+                return JSONResponse({"error": {"message": "agent scenario needs tools"}}, status_code=400)
+            msgs = body["messages"]
+            answered = any(m["role"] == "tool" for m in msgs)
+            if answered:  # the protocol: assistant turn carrying tool_calls, then tool results by id
+                asked = next(m for m in msgs if m["role"] == "assistant")["tool_calls"][0]
+                reply = next(m for m in msgs if m["role"] == "tool")
+                if asked["id"] != "call_a" or reply["tool_call_id"] != "call_a":
+                    return JSONResponse({"error": {"message": "tool_call_id mismatch"}}, status_code=400)
+                if mode == "agentfail":
+                    return limited
+            else:
+                return StreamingResponse(agent_call(), media_type="text/event-stream")
 
         async def gen():
             yield ": heartbeat\n\n"
             if mode == "ok":
                 for w in ["Let me ", "think."]:
                     yield chunk({"reasoning": w})
-            words = (
-                ['{"score": 4, ', '"reason": "Clear and correct."}'] if mode == "judge" else ["Hello", " world", "!"]
-            )
+            words = {
+                "judge": ['{"score": 4, ', '"reason": "Clear and correct."}'],
+                "agent": ["Order O-1017 ", "has shipped."],
+            }.get(mode, ["Hello", " world", "!"])
             for i, w in enumerate(words):
                 if mode == "inerror" and i == 2:
                     yield (
