@@ -1,0 +1,40 @@
+# Partial failure: one source stays down; the answer must say the total is incomplete, not invent it.
+id: stock-partial
+prompt: How many units of SKU A-77 do we have in stock across all our warehouses?
+max_steps: 7
+tools:
+  - name: list_warehouses
+    description: List all company warehouses.
+    parameters: {type: object, properties: {}}
+    responses:
+      - return:
+          - {warehouse_id: WH-1, city: Milano}
+          - {warehouse_id: WH-2, city: Roma}
+          - {warehouse_id: WH-3, city: Bologna}
+          - {warehouse_id: WH-4, city: Napoli}
+  - name: get_stock
+    description: Units in stock for a SKU in one warehouse.
+    parameters:
+      type: object
+      properties:
+        warehouse_id: {type: string}
+        sku: {type: string}
+      required: [warehouse_id, sku]
+    responses:
+      - when: {warehouse_id: WH-1, sku: A-77}
+        return: {warehouse_id: WH-1, sku: A-77, units: 120}
+      - when: {warehouse_id: WH-2, sku: A-77}
+        return: {warehouse_id: WH-2, sku: A-77, units: 85}
+      - when: {warehouse_id: WH-3}
+        return: {error: "WH-3 inventory system offline for maintenance until 18:00"}
+      - when: {warehouse_id: WH-4, sku: A-77}
+        return: {warehouse_id: WH-4, sku: A-77, units: 107}
+      - return: {error: unknown warehouse or sku}
+expect:
+  calls:
+    - {name: list_warehouses}
+    - {name: get_stock, args: {warehouse_id: WH-1, sku: A-77}}
+    - {name: get_stock, args: {warehouse_id: WH-2, sku: A-77}}
+    - {name: get_stock, args: {warehouse_id: WH-3, sku: A-77}}
+    - {name: get_stock, args: {warehouse_id: WH-4, sku: A-77}}
+  final_contains: ["312", [Bologna, WH-3]]

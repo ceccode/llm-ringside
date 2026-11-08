@@ -1,0 +1,87 @@
+# Pagination: the answer is on the last page; stopping at page 1 gives a confident wrong answer.
+id: order-pages
+prompt: >-
+  Has the most recent order placed by luca.verdi@example.com shipped yet?
+  If it has, give me its tracking number.
+max_steps: 8
+tools:
+  - name: find_customer
+    description: Look up a customer by email address. Returns the customer id.
+    parameters:
+      type: object
+      properties:
+        email: {type: string}
+      required: [email]
+    responses:
+      - when: {email: luca.verdi@example.com}
+        return: {customer_id: C-77, name: Luca Verdi}
+      - return: {error: customer not found}
+  - name: get_orders
+    description: >-
+      List a customer's orders, oldest first, 4 per page. Pass `page` to get later pages
+      (default 1). The response says which page comes next, if any.
+    parameters:
+      type: object
+      properties:
+        customer_id: {type: string}
+        page: {type: integer, description: "1-based page number"}
+      required: [customer_id]
+    responses:
+      - when: {customer_id: C-77, page: 2}
+        return:
+          page: 2
+          next_page: 3
+          total_orders: 10
+          orders:
+            - {order_id: O-3155, date: "2026-07-30", status: delivered}
+            - {order_id: O-3201, date: "2026-08-22", status: delivered}
+            - {order_id: O-3248, date: "2026-09-14", status: cancelled}
+            - {order_id: O-3302, date: "2026-10-05", status: delivered}
+      - when: {customer_id: C-77, page: 3}
+        return:
+          page: 3
+          next_page: null
+          total_orders: 10
+          orders:
+            - {order_id: O-3347, date: "2026-10-21", status: delivered}
+            - {order_id: O-3390, date: "2026-11-04", status: shipped}
+      - when: {customer_id: C-77}
+        return:
+          page: 1
+          next_page: 2
+          total_orders: 10
+          orders:
+            - {order_id: O-2950, date: "2026-03-11", status: delivered}
+            - {order_id: O-3012, date: "2026-04-28", status: delivered}
+            - {order_id: O-3077, date: "2026-06-02", status: returned}
+            - {order_id: O-3102, date: "2026-06-19", status: delivered}
+      - return: {error: unknown customer_id}
+  - name: get_shipment
+    description: Shipping details for an order (carrier, tracking number, estimated delivery).
+    parameters:
+      type: object
+      properties:
+        order_id: {type: string}
+      required: [order_id]
+    responses:
+      - when: {order_id: O-3390}
+        return: {order_id: O-3390, carrier: BRT, tracking: TRK-88213, eta: "2026-11-07"}
+      - when: {order_id: O-3102}
+        return: {order_id: O-3102, carrier: BRT, tracking: TRK-51007, delivered: "2026-06-23"}
+      - return: {error: no shipment for this order}
+  - name: get_invoice
+    description: Get the invoice PDF link for an order.
+    parameters:
+      type: object
+      properties:
+        order_id: {type: string}
+      required: [order_id]
+    responses:
+      - return: {url: "https://example.com/invoices/invoice.pdf"}
+expect:
+  ordered: true
+  calls:
+    - {name: find_customer, args: {email: luca.verdi@example.com}}
+    - {name: get_orders, args: {customer_id: C-77, page: 3}}
+    - {name: get_shipment, args: {order_id: O-3390}}
+  final_contains: [O-3390, TRK-88213]

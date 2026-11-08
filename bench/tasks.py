@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -31,6 +32,7 @@ class Expect:
     calls: list[dict] = field(default_factory=list)  # [{name, args: {...}}], args is a subset match
     ordered: bool = False
     allow_extra: bool = True
+    never: list[dict] = field(default_factory=list)  # [{name, args?}], any attempt fails, even a malformed one
     final_contains: list[str | list[str]] = field(default_factory=list)  # a list entry = any of these
 
 
@@ -82,6 +84,7 @@ def load_task(path: Path) -> Task:
         calls=exp.get("calls") or [],
         ordered=bool(exp.get("ordered", False)),
         allow_extra=bool(exp.get("allow_extra", True)),
+        never=exp.get("never") or [],
         final_contains=exp.get("final_contains") or [],
     )
     return Task(raw["id"], raw["prompt"], tools, expect, raw.get("system"), int(raw.get("max_steps", 6)))
@@ -109,8 +112,13 @@ def openai_tools(task: Task) -> list[dict]:
 # -- mocking ------------------------------------------------------------------
 
 
+_NUMBER = re.compile(r"-?\d+(\.\d+)?")
+
+
 def _norm(v) -> str:
-    return (v if isinstance(v, str) else json.dumps(v, sort_keys=True)).strip().lower()
+    """Trimmed, case-insensitive; numbers compare by value, so 103.2, "103.20" and 103.20 match."""
+    s = (v if isinstance(v, str) else json.dumps(v, sort_keys=True)).strip().lower()
+    return repr(float(s)) if _NUMBER.fullmatch(s) else s
 
 
 def _matches(subset: dict, args: dict) -> bool:
@@ -142,9 +150,9 @@ def mock_call(task: Task, name: str, arguments: str) -> ToolOutcome:
 # -- scoring ------------------------------------------------------------------
 
 
-def _label(call: dict) -> str:
+def _label(call: dict, verb: str = "calls") -> str:
     args = ", ".join(f"{k}={v}" for k, v in (call.get("args") or {}).items())
-    return f"calls {call['name']}({args})"
+    return f"{verb} {call['name']}({args})"
 
 
 def score(task: Task, calls: list[dict], final: str, hit_max_steps: bool) -> Check:
@@ -166,6 +174,12 @@ def score(task: Task, calls: list[dict], final: str, hit_max_steps: bool) -> Che
             used.add(hit)
             cursor = hit + 1
         items.append({"ok": hit is not None, "label": _label(want)})
+
+    for banned in exp.never:
+        tried = any(
+            c["name"] == banned["name"] and _matches(banned.get("args") or {}, c.get("args") or {}) for c in calls
+        )
+        items.append({"ok": not tried, "label": _label(banned, "never calls")})
 
     if not exp.allow_extra:
         extra = len(valid) - len(used)

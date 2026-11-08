@@ -1,0 +1,24 @@
+# Date and time zones across a DST gap: Europe has left summer time (Oct 25), New York has not yet (Nov 1).
+id: timezone-dst
+prompt: >-
+  I'm in Rome. Today is Monday 2026-10-26. Schedule a one-hour call with Tom, who is in
+  New York, for this Thursday at 10:00 his time. Then tell me what time the call is for me.
+max_steps: 4
+tools:
+  - name: create_event
+    description: Create a calendar event. Date and start time are in UTC.
+    parameters:
+      type: object
+      properties:
+        title: {type: string}
+        date: {type: string, description: "UTC date, YYYY-MM-DD"}
+        start_utc: {type: string, description: "UTC start time, HH:MM (24-hour)"}
+        duration_min: {type: integer}
+        attendees: {type: array, items: {type: string}}
+      required: [title, date, start_utc, duration_min]
+    responses:
+      - return: {created: true, event_id: EV-9}
+expect:
+  calls:
+    - {name: create_event, args: {date: "2026-10-29", start_utc: "14:00", duration_min: 60}}
+  final_contains: [["15:00", "3pm", "3 pm", "3:00 pm", "3:00pm", "3:00 PM"]]

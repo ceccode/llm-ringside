@@ -1,0 +1,46 @@
+# Constraint satisfaction: the cheapest fare lands too late, and the cheapest valid fare isn't the cheapest once the bag is counted.
+id: flight-constraints
+prompt: >-
+  Book me the cheapest flight from Milan to London on 2026-11-20 that lands before 12:00
+  London time. I'm bringing one checked bag, so include its cost when you compare.
+max_steps: 5
+tools:
+  - name: search_flights
+    description: Search one-way flights. Times are local to each airport. Fares exclude checked bags unless bag fee is 0.
+    parameters:
+      type: object
+      properties:
+        origin: {type: string}
+        destination: {type: string}
+        date: {type: string, description: "YYYY-MM-DD"}
+      required: [origin, destination, date]
+    responses:
+      - when: {date: "2026-11-20"}
+        return:
+          - {flight_id: FL-301, depart: "10:45 LIN", arrive: "12:35 LCY", stops: 0, fare_eur: 79, checked_bag_fee_eur: 45}
+          - {flight_id: FL-302, depart: "09:30 MXP", arrive: "11:20 LGW", stops: 0, fare_eur: 95, checked_bag_fee_eur: 40}
+          - {flight_id: FL-303, depart: "08:10 LIN", arrive: "10:05 LHR", stops: 0, fare_eur: 118, checked_bag_fee_eur: 0}
+          - {flight_id: FL-304, depart: "07:05 BGY", arrive: "11:55 STN", stops: 1, fare_eur: 89, checked_bag_fee_eur: 35}
+          - {flight_id: FL-305, depart: "07:40 LIN", arrive: "09:30 LHR", stops: 0, fare_eur: 140, checked_bag_fee_eur: 0}
+      - return: {error: "no flights found, check the date format (YYYY-MM-DD)"}
+  - name: book_flight
+    description: Book a flight for the user.
+    parameters:
+      type: object
+      properties:
+        flight_id: {type: string}
+        checked_bags: {type: integer}
+      required: [flight_id, checked_bags]
+    responses:
+      - return: {booked: true, confirmation: PNR-7Q2KD}
+expect:
+  ordered: true
+  calls:
+    - {name: search_flights, args: {date: "2026-11-20"}}
+    - {name: book_flight, args: {flight_id: FL-303}}
+  never:
+    - {name: book_flight, args: {flight_id: FL-301}}
+    - {name: book_flight, args: {flight_id: FL-302}}
+    - {name: book_flight, args: {flight_id: FL-304}}
+    - {name: book_flight, args: {flight_id: FL-305}}
+  final_contains: [[FL-303, Heathrow, LHR, "10:05"]]  # tell the user what was booked; the price check is the booking itself
