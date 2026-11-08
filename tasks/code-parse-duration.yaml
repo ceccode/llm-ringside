@@ -1,0 +1,86 @@
+# Spec following on a small parser: order rules, a bare-number case, and the \d-matches-Unicode trap.
+id: code-parse-duration
+kind: coding
+prompt: |
+  Write `parse_duration(text: str) -> int`, returning a duration in whole seconds.
+
+  - A duration is one or more components. A component is a non-negative integer written with
+    ASCII digits 0-9 (leading zeros allowed), immediately followed by a lowercase unit:
+    `d` (86400 s), `h` (3600 s), `m` (60 s) or `s` (1 s). Example: "1h30m" is 5400.
+  - Components may be separated by any amount of whitespace, or by none. Leading and trailing
+    whitespace is ignored. There is no whitespace between a number and its unit.
+  - Each unit appears at most once, and units appear in the order d, h, m, s.
+  - Special case: the whole input being a bare integer with no unit means seconds ("90" is 90).
+  - Anything else raises ValueError: empty or blank input, uppercase or unknown units, signs,
+    decimals, repeated or out-of-order units, a number without a unit after other components.
+tests: |
+  from checks import raises
+  from solution import parse_duration
+
+  def test_single_units():
+      assert parse_duration("2d") == 172800
+      assert parse_duration("3h") == 10800
+      assert parse_duration("15m") == 900
+      assert parse_duration("45s") == 45
+
+  def test_combined():
+      assert parse_duration("1h30m") == 5400
+      assert parse_duration("1d2h3m4s") == 93784
+      assert parse_duration("2h5s") == 7205
+
+  def test_whitespace():
+      assert parse_duration("1d 2h 3m 4s") == 93784
+      assert parse_duration("  10m  ") == 600
+      assert parse_duration("1h \t 5s\n") == 3605
+
+  def test_bare_seconds():
+      assert parse_duration("90") == 90
+      assert parse_duration(" 007 ") == 7
+
+  def test_zero_and_leading_zeros():
+      assert parse_duration("0") == 0
+      assert parse_duration("0h0m") == 0
+      assert parse_duration("05m") == 300
+
+  def test_order_and_repeats_rejected():
+      for text in ["30m1h", "1s1m", "1h1h", "2d 1d"]:
+          with raises(ValueError):
+              parse_duration(text)
+
+  def test_malformed_rejected():
+      for text in ["", "   ", "1H", "1.5h", "-5m", "+5m", "1h30", "h", "1 h", "1hm", "abc", "1w", "90 s", "5m-"]:
+          with raises(ValueError):
+              parse_duration(text)
+
+  def test_ascii_digits_only():
+      for text in ["١٢s", "٣", "1٠m"]:
+          with raises(ValueError):
+              parse_duration(text)
+
+  def test_large_values():
+      assert parse_duration("100000d") == 8640000000
+reference: |
+  import re
+
+  _UNITS = {"d": 86400, "h": 3600, "m": 60, "s": 1}
+  _COMPONENT = re.compile(r"([0-9]+)([dhms])")
+
+  def parse_duration(text: str) -> int:
+      s = text.strip()
+      if not s:
+          raise ValueError("empty duration")
+      if re.fullmatch(r"[0-9]+", s):
+          return int(s)
+      total, pos, last = 0, 0, -1
+      while pos < len(s):
+          while pos < len(s) and s[pos].isspace():
+              pos += 1
+          m = _COMPONENT.match(s, pos)
+          if not m:
+              raise ValueError(f"bad duration: {text!r}")
+          rank = "dhms".index(m.group(2))
+          if rank <= last:
+              raise ValueError(f"units out of order or repeated: {text!r}")
+          last, pos = rank, m.end()
+          total += int(m.group(1)) * _UNITS[m.group(2)]
+      return total

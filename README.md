@@ -1,11 +1,12 @@
 # llm-ringside
 
-A ringside seat for LLM APIs. Send one prompt, or one agentic task, to several models at once
+A ringside seat for LLM APIs. Send one prompt, or one agentic or coding task, to several models at once
 and watch them answer side by side:
 
 - **Speed and reliability, measured**: time to first token, total time, tokens per second, token usage, and every way a request can fail.
 - **Quality, judged**: rate the answers yourself, or let a judge model score them and say why.
 - **Tool use, checked**: multi-turn tasks with mocked tools, scored by a machine instead of an opinion.
+- **Code, tested**: the model writes a module, hidden tests run it.
 
 It works with any endpoint that speaks the OpenAI `chat/completions` format and ships configured
 for [Xference](https://www.xference.ai), Anthropic, OpenAI and OpenCode Go.
@@ -143,6 +144,42 @@ as the tool result and can recover, the way a real agent would.
 
 The first four are warm-ups that every model we tried passes. The last seven are meant to separate them.
 
+## Coding tasks
+
+A task with `kind: coding` asks for a Python module in one turn, no tools. The answer's code block
+becomes `solution.py`, the task's hidden tests run against it, and the check is one item per test,
+with the failing assertion as its label.
+
+```yaml
+id: code-parse-duration
+kind: coding
+prompt: |
+  Write `parse_duration(text: str) -> int` ...   # the spec; this is all the model sees
+tests: |                                        # hidden: plain test_* functions, no pytest needed
+  from checks import raises                     # tiny helper: `with raises(ValueError): ...`
+  from solution import parse_duration
+  def test_combined():
+      assert parse_duration("1h30m") == 5400
+reference: |                                    # optional known-good solution; our own tests check it passes
+  ...
+timeout_s: 10                                   # for the whole test run (default 10)
+max_tokens: 16384                               # floor for the run's max_tokens (default 16384)
+```
+
+**This runs model-written code on your machine.** The tests run in a subprocess in a throwaway
+directory, with a timeout that kills the whole process group, a 10 MB file-size cap, and an
+environment stripped down to `PATH`, so your API keys are not visible to it. It is not a sandbox:
+the code can still read your files and reach the network with your user's permissions. Run coding
+tasks only with models and tasks you are comfortable with, or inside a container or VM.
+
+| Task | What it probes |
+|---|---|
+| `code-parse-duration` | spec following in a small parser: unit order, a bare-number case, `\d` matching non-ASCII digits |
+| `code-free-slots` | intervals: unsorted overlapping calendars, clipping, half-open ends, `24:00` |
+| `code-ttl-cache` | a stateful class: LRU plus TTL, expired entries freed before evicting a live one |
+| `code-semver-sort` | a published spec with sharp edges: SemVer 2.0.0 precedence and validity |
+| `code-justify` | a well-known exercise with the conventions changed, so a memorized answer fails |
+
 For an episode, TTFT is the first token of the first turn, while total time, tokens and tok/s cover
 all turns. The judge still works on task runs and grades the final answer.
 
@@ -170,7 +207,7 @@ the code small.
 
 ```bash
 uv sync --group dev
-uv run pytest          # ~55 tests, < 1 s, no network, no keys
+uv run pytest          # ~80 tests, a few seconds, no network, no keys
 uv run ruff check .
 ```
 
@@ -184,7 +221,7 @@ provider quirk means adding a scenario there and a test next to it.
 
 - Cost per run: usage is recorded, prices are not. Easy to add if you need it.
 - Batch suites: one prompt or task at a time, by design. Pairwise judging would be the next step if pointwise scores drift.
-- Coding tasks: planned as `tasks/` entries with hidden pytest tests, run in a subprocess with a timeout. Note that this means running model-written code on your machine.
+- Coding tasks with feedback: today the model gets one shot. Letting it see a failing test and retry would measure repair, not just first-try correctness.
 
 ## License
 

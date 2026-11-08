@@ -3,6 +3,7 @@
 The model name picks the behaviour, so a test reads like a scenario:
   ok | nousage | nodone | inerror | http429 | missingkey | judge (answers with a verdict JSON)
   judgecut (verdict cut off by max_tokens) | agent (calls find_customer, then answers once it gets the tool result) | agentfail (429 on turn 2)
+  coder (answers with a Python code block defining add)
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from bench.config import ModelConfig, Provider
 
-SCENARIOS = ["ok", "nousage", "nodone", "inerror", "http429", "judge", "judgecut", "agent", "agentfail"]
+SCENARIOS = ["ok", "nousage", "nodone", "inerror", "http429", "judge", "judgecut", "agent", "agentfail", "coder"]
 
 
 def chunk(delta: dict, finish: str | None = None, usage: dict | None = None) -> str:
@@ -79,6 +80,7 @@ def fake_provider() -> FastAPI:
                 "judge": ['{"score": 4, ', '"reason": "Clear and correct."}'],
                 "agent": ["Order O-1017 ", "has shipped."],
                 "judgecut": ['{"score": 4, '],
+                "coder": ["Sure:\n```python\ndef add(a, b):\n", "    return a + b\n```"],
             }.get(mode, ["Hello", " world", "!"])
             for i, w in enumerate(words):
                 if mode == "inerror" and i == 2:

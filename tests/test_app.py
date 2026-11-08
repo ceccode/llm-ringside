@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from bench.app import create_app
+from bench.coding import load as load_coding
 from bench.tasks import Expect, Task, Tool
 
 LOOKUP = Task(
@@ -21,11 +22,19 @@ LOOKUP = Task(
     ],
     Expect(calls=[{"name": "find_customer", "args": {"email": "mario@example.com"}}], final_contains=["shipped"]),
 )
+ADD = load_coding(
+    {
+        "id": "add",
+        "prompt": "Write add(a, b).",
+        "tests": "from solution import add\n\ndef test_add():\n    assert add(2, 3) == 5\n",
+    },
+    "add.yaml",
+)
 
 
 @pytest.fixture
 def client(models, http_client, tmp_path):
-    app = create_app(models, db_path=tmp_path / "t.db", http_client=http_client, tasks={"lookup": LOOKUP})
+    app = create_app(models, db_path=tmp_path / "t.db", http_client=http_client, tasks={"lookup": LOOKUP, "add": ADD})
     return TestClient(app)
 
 
@@ -107,8 +116,35 @@ def test_judge_rejects_bad_ids(client):
 
 def test_tasks_endpoint(client):
     assert client.get("/api/tasks").json() == [
-        {"id": "lookup", "prompt": "Status of Mario's order?", "tools": ["find_customer"], "max_steps": 6}
+        {
+            "id": "lookup",
+            "kind": "agentic",
+            "prompt": "Status of Mario's order?",
+            "tools": ["find_customer"],
+            "max_steps": 6,
+        },
+        {
+            "id": "add",
+            "kind": "coding",
+            "prompt": "Write add(a, b).",
+            "tests": 1,
+            "timeout_s": 10.0,
+            "max_tokens": 16384,
+        },
     ]
+
+
+def test_coding_run_grades_the_answer_with_hidden_tests(client):
+    evs = events(
+        client.post("/api/run", json={"task_id": "add", "model_ids": ["fake/coder", "fake/ok"], "max_tokens": 64})
+    )
+    detail = client.get(f"/api/runs/{evs[0]['run_id']}").json()
+    assert detail["system"].startswith("You are writing a Python 3.11 module") and detail["params"]["max_tokens"] == 64
+    by_model = {x["model_id"]: x for x in detail["results"]}
+    assert by_model["fake/coder"]["check_score"] == 1.0 and by_model["fake/coder"]["steps"] == 1
+    assert (
+        by_model["fake/ok"]["check_score"] == 0 and "did not import" in by_model["fake/ok"]["check_detail"][0]["label"]
+    )
 
 
 def test_task_run_streams_tool_events_and_persists_the_check(client):

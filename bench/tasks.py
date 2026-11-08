@@ -11,6 +11,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import ClassVar
 
 import yaml
 
@@ -44,10 +45,12 @@ class Task:
     expect: Expect
     system: str | None = None
     max_steps: int = 6
+    kind: ClassVar[str] = "agentic"
 
     def public(self) -> dict:
         return {
             "id": self.id,
+            "kind": self.kind,
             "prompt": self.prompt,
             "tools": [t.name for t in self.tools],
             "max_steps": self.max_steps,
@@ -70,8 +73,13 @@ class Check:
 # -- loading ------------------------------------------------------------------
 
 
-def load_task(path: Path) -> Task:
+def load_task(path: Path):
+    """A Task, or a coding.CodingTask when the file says `kind: coding`."""
     raw = yaml.safe_load(path.read_text()) or {}
+    if raw.get("kind") == "coding":
+        from . import coding  # coding imports Check from here
+
+        return coding.load(raw, path.name)
     for key in ("id", "prompt", "tools", "expect"):
         if key not in raw:
             raise ValueError(f"{path.name}: missing '{key}'")
@@ -90,7 +98,7 @@ def load_task(path: Path) -> Task:
     return Task(raw["id"], raw["prompt"], tools, expect, raw.get("system"), int(raw.get("max_steps", 6)))
 
 
-def load_tasks(directory: Path | None = None) -> dict[str, Task]:
+def load_tasks(directory: Path | None = None) -> dict:
     """Every tasks/*.yaml by id. Default dir overridable with BENCH_TASKS_DIR."""
     directory = directory or Path(os.environ.get("BENCH_TASKS_DIR", TASKS_DIR))
     tasks: dict[str, Task] = {}

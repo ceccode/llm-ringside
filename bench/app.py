@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import db
+from .coding import CodingTask, run_coding
 from .config import ROOT, ModelConfig, load
 from .episode import run_episode
 from .judge import Verdict, build_messages, parse_verdict
@@ -21,7 +22,7 @@ from .tasks import Task, load_tasks
 
 class RunRequest(BaseModel):
     prompt: str = ""
-    task_id: str | None = None  # an agentic task from tasks/; its prompt and system replace these
+    task_id: str | None = None  # a task from tasks/ (agentic or coding); its prompt and system replace these
     system: str | None = None
     criteria: str | None = None  # grading criteria / expected answer, read by the judge only
     model_ids: list[str] = Field(min_length=1)
@@ -50,7 +51,7 @@ def create_app(
     models: dict[str, ModelConfig],
     db_path: Path | str = db.DB_PATH,
     http_client: httpx.AsyncClient | None = None,
-    tasks: dict[str, Task] | None = None,
+    tasks: dict[str, Task | CodingTask] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="llm-ringside")
     tasks = tasks or {}
@@ -95,7 +96,9 @@ def create_app(
                 "emit": queue.put,
                 "client": http_client,
             }
-            if task:
+            if task and task.kind == "coding":
+                result = await run_coding(models[model_id], task, **common)
+            elif task:
                 result = await run_episode(models[model_id], task, **common)
             else:
                 result = await run_model(models[model_id], req.messages(), **common)

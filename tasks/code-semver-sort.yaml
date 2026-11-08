@@ -1,0 +1,88 @@
+# A published spec with sharp edges: SemVer 2.0.0 precedence and validity.
+id: code-semver-sort
+kind: coding
+prompt: |
+  Write `sort_versions(versions: list[str]) -> list[str]` that returns the versions in ascending
+  precedence according to Semantic Versioning 2.0.0 (semver.org).
+
+  - Build metadata ("+...") does not affect precedence. Versions of equal precedence keep their
+    input order.
+  - Any string that is not a valid SemVer 2.0.0 version raises ValueError. No "v" prefix, no
+    surrounding whitespace.
+tests: |
+  from checks import raises
+  from solution import sort_versions
+
+  def test_core_is_numeric_not_lexical():
+      assert sort_versions(["1.10.0", "1.9.0", "1.2.10", "1.2.9", "2.0.0", "1.99.99"]) == [
+          "1.2.9", "1.2.10", "1.9.0", "1.10.0", "1.99.99", "2.0.0"]
+
+  def test_prerelease_before_release():
+      assert sort_versions(["1.0.0", "1.0.0-rc.1", "0.9.9"]) == ["0.9.9", "1.0.0-rc.1", "1.0.0"]
+
+  def test_spec_example_chain():
+      chain = ["1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta",
+               "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0"]
+      shuffled = [chain[i] for i in (5, 0, 7, 3, 1, 6, 4, 2)]
+      assert sort_versions(shuffled) == chain
+
+  def test_numeric_identifiers():
+      assert sort_versions(["1.0.0-10", "1.0.0-2", "1.0.0-1"]) == ["1.0.0-1", "1.0.0-2", "1.0.0-10"]
+      assert sort_versions(["1.0.0-alpha.a", "1.0.0-alpha.1"]) == ["1.0.0-alpha.1", "1.0.0-alpha.a"]
+
+  def test_longer_prerelease_wins_when_prefix_equal():
+      assert sort_versions(["1.0.0-rc.1.1", "1.0.0-rc.1"]) == ["1.0.0-rc.1", "1.0.0-rc.1.1"]
+
+  def test_alphanumeric_compares_ascii():
+      assert sort_versions(["1.0.0-beta", "1.0.0-Beta", "1.0.0-alpha"]) == [
+          "1.0.0-Beta", "1.0.0-alpha", "1.0.0-beta"]
+
+  def test_build_metadata_ignored_and_order_stable():
+      assert sort_versions(["1.0.0+b", "1.0.0+a", "1.0.0"]) == ["1.0.0+b", "1.0.0+a", "1.0.0"]
+      assert sort_versions(["1.0.1", "1.0.0+zzz"]) == ["1.0.0+zzz", "1.0.1"]
+
+  def test_valid_edge_forms_accepted():
+      ok = ["0.0.0", "1.0.0-0a", "1.0.0-x-y-z.--", "1.0.0+001", "1.0.0-alpha+build.1.2", "10.20.30"]
+      assert sorted(sort_versions(ok)) == sorted(ok)
+
+  def test_invalid_rejected():
+      bad = ["1.0", "1.0.0.0", "01.0.0", "1.01.0", "1.0.0-", "1.0.0-01", "v1.0.0", "1.0.0+",
+             "1.0.0-alpha..1", "1.0.0-al_pha", "", " 1.0.0", "1.0.0 ", "1.0.0+a+b", "-1.0.0"]
+      for v in bad:
+          with raises(ValueError):
+              sort_versions([v])
+
+  def test_empty_list():
+      assert sort_versions([]) == []
+reference: |
+  import re
+
+  _IDENT = re.compile(r"[0-9A-Za-z-]+")
+  _NUM = re.compile(r"0|[1-9][0-9]*")
+
+  def _parse(v):
+      if not isinstance(v, str):
+          raise ValueError(f"not a version: {v!r}")
+      rest, build = (v.split("+", 1) + [None])[:2]
+      if build is not None and not all(_IDENT.fullmatch(p) for p in build.split(".")):
+          raise ValueError(f"bad build metadata: {v!r}")
+      core, pre = (rest.split("-", 1) + [None])[:2]
+      parts = core.split(".")
+      if len(parts) != 3 or not all(re.fullmatch(r"[0-9]+", p) and _NUM.fullmatch(p) for p in parts):
+          raise ValueError(f"bad version core: {v!r}")
+      ids = []
+      if pre is not None:
+          for p in pre.split("."):
+              if not _IDENT.fullmatch(p):
+                  raise ValueError(f"bad pre-release: {v!r}")
+              if re.fullmatch(r"[0-9]+", p):
+                  if not _NUM.fullmatch(p):
+                      raise ValueError(f"leading zero in pre-release: {v!r}")
+                  ids.append((0, int(p), ""))
+              else:
+                  ids.append((1, 0, p))
+      return (*map(int, parts), 0 if pre is not None else 1, tuple(ids))
+
+  def sort_versions(versions):
+      keyed = [(_parse(v), v) for v in versions]
+      return [v for _, v in sorted(keyed, key=lambda kv: kv[0])]

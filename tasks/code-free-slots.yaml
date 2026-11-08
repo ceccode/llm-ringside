@@ -1,0 +1,86 @@
+# Interval reasoning: merge unsorted overlapping calendars, clip to working hours, half-open ends, 24:00.
+id: code-free-slots
+kind: coding
+prompt: |
+  Write `free_slots(busy: list[list[str]], day_start: str, day_end: str, min_minutes: int) -> list[str]`.
+
+  - `busy` has one list per person; each item is "HH:MM-HH:MM" with start before end. Lists are
+    unsorted and intervals may overlap, within one person and across people.
+  - Times are 24-hour "HH:MM" from "00:00" to "24:00"; "24:00" (end of day) only appears as an end.
+  - Return the intervals inside [day_start, day_end] where nobody is busy and that last at least
+    `min_minutes` minutes (exactly `min_minutes` counts), sorted, each formatted "HH:MM-HH:MM"
+    with zero padding.
+  - Intervals are half-open: busy "10:00-11:00" and "11:00-12:00" leave no gap between them, and a
+    free slot may start at the minute a busy interval ends.
+  - Busy intervals partly outside working hours are clipped; those fully outside are ignored.
+  - If day_start is not before day_end, return []. `min_minutes` is at least 1.
+tests: |
+  from solution import free_slots
+
+  def test_basic_two_people():
+      busy = [["09:00-10:00", "13:00-14:00"], ["11:00-12:00"]]
+      assert free_slots(busy, "09:00", "17:00", 30) == ["10:00-11:00", "12:00-13:00", "14:00-17:00"]
+
+  def test_overlapping_and_unsorted():
+      busy = [["14:00-15:30", "09:30-11:00"], ["10:30-12:00", "15:00-16:00"]]
+      assert free_slots(busy, "09:00", "17:00", 15) == ["09:00-09:30", "12:00-14:00", "16:00-17:00"]
+
+  def test_touching_intervals_leave_no_gap():
+      busy = [["10:00-11:00"], ["11:00-12:00"]]
+      assert free_slots(busy, "10:00", "13:00", 1) == ["12:00-13:00"]
+
+  def test_min_length_is_inclusive():
+      busy = [["09:00-09:30", "10:00-12:00"]]
+      assert free_slots(busy, "09:00", "12:30", 30) == ["09:30-10:00", "12:00-12:30"]
+      assert free_slots(busy, "09:00", "12:30", 31) == []
+
+  def test_clipped_to_working_hours():
+      busy = [["07:00-09:30", "16:30-19:00"], ["20:00-21:00", "06:00-07:00"]]
+      assert free_slots(busy, "09:00", "17:00", 60) == ["09:30-16:30"]
+
+  def test_no_busy_at_all():
+      assert free_slots([], "09:00", "17:00", 60) == ["09:00-17:00"]
+      assert free_slots([[], []], "09:00", "10:00", 60) == ["09:00-10:00"]
+      assert free_slots([], "09:00", "10:00", 61) == []
+
+  def test_fully_busy():
+      assert free_slots([["08:00-18:00"]], "09:00", "17:00", 1) == []
+
+  def test_end_of_day():
+      busy = [["00:00-08:00", "12:00-22:00"]]
+      assert free_slots(busy, "00:00", "24:00", 60) == ["08:00-12:00", "22:00-24:00"]
+      assert free_slots([["23:00-24:00"]], "22:00", "24:00", 30) == ["22:00-23:00"]
+
+  def test_zero_padding():
+      assert free_slots([["09:35-23:55"]], "09:05", "24:00", 5) == ["09:05-09:35", "23:55-24:00"]
+
+  def test_inverted_or_empty_day():
+      assert free_slots([], "17:00", "09:00", 1) == []
+      assert free_slots([], "09:00", "09:00", 1) == []
+reference: |
+  def _minutes(t):
+      h, m = t.split(":")
+      return int(h) * 60 + int(m)
+
+  def _fmt(x):
+      return f"{x // 60:02d}:{x % 60:02d}"
+
+  def free_slots(busy, day_start, day_end, min_minutes):
+      lo, hi = _minutes(day_start), _minutes(day_end)
+      if lo >= hi:
+          return []
+      intervals = []
+      for person in busy:
+          for item in person:
+              a, b = item.split("-")
+              a, b = max(_minutes(a), lo), min(_minutes(b), hi)
+              if a < b:
+                  intervals.append((a, b))
+      out, cur = [], lo
+      for a, b in sorted(intervals):
+          if a - cur >= min_minutes:
+              out.append(f"{_fmt(cur)}-{_fmt(a)}")
+          cur = max(cur, b)
+      if hi - cur >= min_minutes:
+          out.append(f"{_fmt(cur)}-{_fmt(hi)}")
+      return out

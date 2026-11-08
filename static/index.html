@@ -203,8 +203,11 @@ async function loadModels() {
     </fieldset>`).join('');
   const tasks = await (await fetch('/api/tasks')).json();
   TASKS = Object.fromEntries(tasks.map(t => [t.id, t]));
-  $('#task').innerHTML = '<option value="">free prompt</option>' +
-    tasks.map(t => `<option value="${esc(t.id)}">${esc(t.id)}</option>`).join('');
+  const group = (kind, label) => {
+    const opts = tasks.filter(t => t.kind === kind).map(t => `<option value="${esc(t.id)}">${esc(t.id)}</option>`).join('');
+    return opts ? `<optgroup label="${label}">${opts}</optgroup>` : '';
+  };
+  $('#task').innerHTML = '<option value="">free prompt</option>' + group('agentic', 'agentic: tools') + group('coding', 'coding: hidden tests');
   const savedTask = localStorage.getItem('task');
   if (TASKS[savedTask]) { $('#task').value = savedTask; applyTask(); }
   const savedJudge = localStorage.getItem('judge');
@@ -220,7 +223,9 @@ function applyTask() {
   if (t) {
     if (!p.readOnly) freePrompt = p.value;
     p.value = t.prompt; p.readOnly = true;
-    $('#task-hint').textContent = `tools: ${t.tools.join(', ')} · up to ${t.max_steps} turns · scored automatically`;
+    $('#task-hint').textContent = t.kind === 'coding'
+      ? `${t.tests} hidden tests · the answer's code runs on this machine (${t.timeout_s} s limit) · at least ${t.max_tokens} max_tokens`
+      : `tools: ${t.tools.join(', ')} · up to ${t.max_steps} turns · scored automatically`;
   } else {
     if (p.readOnly) p.value = freePrompt;
     p.readOnly = false; $('#task-hint').textContent = '';

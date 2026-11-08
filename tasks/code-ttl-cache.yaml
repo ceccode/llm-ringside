@@ -1,0 +1,166 @@
+# Stateful class: LRU plus TTL, where expired entries must be freed before evicting a live one.
+id: code-ttl-cache
+kind: coding
+prompt: |
+  Write a class `TTLCache` with:
+
+      TTLCache(capacity: int, ttl: float, clock=time.monotonic)
+      get(key, default=None)
+      put(key, value)
+      __len__()
+
+  - `clock` is a zero-argument function returning seconds; tests pass a fake one.
+  - An entry expires `ttl` seconds after it was last put: it is expired when
+    clock() - put_time >= ttl. Reading an entry does not extend its life.
+  - `get` returns the value of a live entry and marks it most recently used. For a missing or
+    expired key it returns `default` (and drops the expired entry). A stored value of None is a
+    real value, not a miss.
+  - `put` on an existing key replaces the value, restarts its TTL and marks it most recently used.
+  - `put` of a new key when the cache holds `capacity` live entries: first drop every expired
+    entry; only if it is still full, evict the least recently used entry.
+  - `len()` counts live entries only.
+  - capacity < 1 or ttl <= 0 raises ValueError.
+tests: |
+  from checks import raises
+  from solution import TTLCache
+
+  class Clock:
+      def __init__(self):
+          self.now = 0.0
+      def __call__(self):
+          return self.now
+
+  def make(capacity=2, ttl=10):
+      clock = Clock()
+      return TTLCache(capacity, ttl, clock=clock), clock
+
+  def test_put_get_basic():
+      c, _ = make()
+      c.put("a", 1)
+      assert c.get("a") == 1
+      assert c.get("missing") is None
+      assert c.get("missing", "d") == "d"
+
+  def test_lru_eviction_order():
+      c, _ = make(capacity=2)
+      c.put("a", 1)
+      c.put("b", 2)
+      assert c.get("a") == 1
+      c.put("c", 3)
+      assert c.get("b") is None and c.get("a") == 1 and c.get("c") == 3
+
+  def test_put_existing_updates_value_and_recency():
+      c, _ = make(capacity=2)
+      c.put("a", 1)
+      c.put("b", 2)
+      c.put("a", 10)
+      c.put("c", 3)
+      assert c.get("a") == 10 and c.get("b") is None and c.get("c") == 3
+
+  def test_expiry_boundary():
+      c, clock = make(ttl=10)
+      c.put("a", 1)
+      clock.now = 9.999
+      assert c.get("a") == 1
+      clock.now = 10.0
+      assert c.get("a", "gone") == "gone"
+
+  def test_get_does_not_extend_life():
+      c, clock = make(ttl=10)
+      c.put("a", 1)
+      clock.now = 8
+      assert c.get("a") == 1
+      clock.now = 12
+      assert c.get("a") is None
+
+  def test_put_restarts_ttl():
+      c, clock = make(ttl=10)
+      c.put("a", 1)
+      clock.now = 8
+      c.put("a", 2)
+      clock.now = 15
+      assert c.get("a") == 2
+
+  def test_expired_entries_freed_before_lru_eviction():
+      c, clock = make(capacity=2, ttl=10)
+      c.put("a", 1)
+      clock.now = 1
+      c.put("b", 2)
+      clock.now = 2
+      assert c.get("a") == 1  # a is now most recently used, b least
+      clock.now = 10.5  # a expired (put at 0), b still live (put at 1)
+      c.put("c", 3)
+      assert c.get("b") == 2 and c.get("c") == 3
+      assert len(c) == 2
+
+  def test_len_counts_live_only():
+      c, clock = make(capacity=3, ttl=10)
+      c.put("a", 1)
+      clock.now = 5
+      c.put("b", 2)
+      assert len(c) == 2
+      clock.now = 11
+      assert len(c) == 1
+      clock.now = 20
+      assert len(c) == 0
+
+  def test_none_is_a_value():
+      c, _ = make()
+      c.put("a", None)
+      assert c.get("a", "default") is None
+      assert len(c) == 1
+
+  def test_invalid_arguments():
+      for args in [(0, 10), (-1, 10), (2, 0), (2, -5)]:
+          with raises(ValueError):
+              TTLCache(*args)
+
+  def test_default_clock():
+      c = TTLCache(1, 60)
+      c.put("k", "v")
+      assert c.get("k") == "v"
+reference: |
+  import time
+  from collections import OrderedDict
+
+  _MISSING = object()
+
+  class TTLCache:
+      def __init__(self, capacity, ttl, clock=time.monotonic):
+          if capacity < 1 or ttl <= 0:
+              raise ValueError("capacity must be >= 1 and ttl > 0")
+          self.capacity, self.ttl, self.clock = capacity, ttl, clock
+          self._data = OrderedDict()  # key -> (value, put_time), least recently used first
+
+      def _expired(self, put_time, now):
+          return now - put_time >= self.ttl
+
+      def _purge(self):
+          now = self.clock()
+          for k in [k for k, (_, t) in self._data.items() if self._expired(t, now)]:
+              del self._data[k]
+
+      def get(self, key, default=None):
+          item = self._data.get(key, _MISSING)
+          if item is _MISSING:
+              return default
+          if self._expired(item[1], self.clock()):
+              del self._data[key]
+              return default
+          self._data.move_to_end(key)
+          return item[0]
+
+      def put(self, key, value):
+          now = self.clock()
+          if key in self._data:
+              self._data[key] = (value, now)
+              self._data.move_to_end(key)
+              return
+          self._purge()
+          if len(self._data) >= self.capacity:
+              self._data.popitem(last=False)
+          self._data[key] = (value, now)
+
+      def __len__(self):
+          self._purge()
+          return len(self._data)

@@ -1,0 +1,100 @@
+# A well-known exercise with the conventions changed: memorized answers pad lines that must not be padded.
+id: code-justify
+kind: coding
+prompt: |
+  Write `justify(text: str, width: int) -> list[str]`, full justification of plain text.
+
+  - Words are maximal runs of non-whitespace. Paragraphs are separated by one or more blank lines
+    (lines that are empty or contain only whitespace); a single newline inside a paragraph is just
+    whitespace. Leading and trailing blank lines produce nothing.
+  - Each paragraph is laid out greedily: a line takes as many words as fit with single spaces
+    between them (length <= width).
+  - Every line of a paragraph except its last, and except lines holding a single word, is
+    stretched to exactly `width` by widening the gaps between words: gaps differ by at most one
+    space and the wider gaps come first (leftmost).
+  - A paragraph's last line and any single-word line are left as they are: single spaces, and no
+    trailing spaces. No line ever ends with a space.
+  - Between two paragraphs the output has one empty string "".
+  - Empty or whitespace-only text returns []. A word longer than `width`, or width < 1, raises
+    ValueError.
+tests: |
+  from checks import raises
+  from solution import justify
+
+  def test_basic_justification():
+      assert justify("This is an example of text justification.", 16) == [
+          "This    is    an",
+          "example  of text",
+          "justification.",
+      ]
+
+  def test_wider_gaps_go_left():
+      assert justify("a b c d", 6) == ["a  b c", "d"]
+      assert justify("one two three four", 15) == ["one  two  three", "four"]
+
+  def test_last_line_not_padded():
+      lines = justify("What must be acknowledgment shall be", 16)
+      assert lines == ["What   must   be", "acknowledgment", "shall be"]
+
+  def test_single_word_lines_not_padded():
+      assert justify("supercalifragilistic is long", 20) == ["supercalifragilistic", "is long"]
+      assert all(not line.endswith(" ") for line in justify("alpha beta gamma delta", 7))
+
+  def test_exact_fit():
+      assert justify("abc def", 7) == ["abc def"]
+      assert justify("ab cd ef gh", 5) == ["ab cd", "ef gh"]
+
+  def test_paragraphs():
+      text = "first para here\n\n\nsecond one\n   \nthird"
+      assert justify(text, 10) == ["first para", "here", "", "second one", "", "third"]
+
+  def test_whitespace_inside_paragraph():
+      assert justify("  a\tb\nc    d  ", 6) == ["a  b c", "d"]
+
+  def test_empty_text():
+      assert justify("", 10) == []
+      assert justify(" \n\n \t ", 10) == []
+
+  def test_word_too_long():
+      with raises(ValueError):
+          justify("short incomprehensibilities", 10)
+
+  def test_invalid_width():
+      with raises(ValueError):
+          justify("a", 0)
+reference: |
+  import re
+
+  def _paragraph(words, width):
+      lines, cur = [], []
+      for w in words:
+          if cur and len(" ".join(cur + [w])) > width:
+              lines.append(cur)
+              cur = [w]
+          else:
+              cur.append(w)
+      lines.append(cur)
+      out = []
+      for i, line in enumerate(lines):
+          if i == len(lines) - 1 or len(line) == 1:
+              out.append(" ".join(line))
+              continue
+          gaps = len(line) - 1
+          q, r = divmod(width - sum(map(len, line)), gaps)
+          out.append("".join(w + " " * (q + (j < r)) for j, w in enumerate(line[:-1])) + line[-1])
+      return out
+
+  def justify(text, width):
+      if width < 1:
+          raise ValueError("width must be >= 1")
+      paragraphs = [p.split() for p in re.split(r"\n[^\S\n]*\n", text)]
+      paragraphs = [words for words in paragraphs if words]
+      for words in paragraphs:
+          if any(len(w) > width for w in words):
+              raise ValueError("word longer than width")
+      out = []
+      for words in paragraphs:
+          if out:
+              out.append("")
+          out.extend(_paragraph(words, width))
+      return out
