@@ -5,3 +5,7 @@ __pycache__/
 .claude/
 # vendor docs export, not redistributed
 docs/xference.md
+
+# drafts: posts and ideas, never committed
+posts/
+ideas/
